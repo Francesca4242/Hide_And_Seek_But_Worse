@@ -7,9 +7,11 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
+    <div id="toast-container"></div>
+
     <header>
       <h1>Hide and Seek But Worse</h1>
-      <p class="tagline">A tiny real-time multiplayer game on Cloudflare Workers + Durable Objects.</p>
+      <p class="tagline">A game of hide and seek, ruined by paperwork. Bureaucracy Edition.</p>
     </header>
 
     <main>
@@ -34,24 +36,135 @@
           <span id="hud-found">Found: 0/0</span>
         </div>
 
-        <canvas id="board" width="512" height="384"></canvas>
+        <button id="notif-btn" class="secondary-btn">🔔 Enable Alerts</button>
 
-        <div id="controls">
+        <!-- LOBBY -->
+        <div id="lobby-panel" class="hidden">
+          <p class="section-title">Method of Concealment</p>
+          <div id="mode-select">
+            <button class="mode-btn" data-mode="virtual">🌐 Remote<br /><small>Virtual map</small></button>
+            <button class="mode-btn" data-mode="physical">🧍 In Person<br /><small>Physical hiding</small></button>
+          </div>
           <button id="start-btn" class="hidden">Start Game</button>
-          <button id="restart-btn" class="hidden">Play Again</button>
-          <p class="hint">Arrow keys / WASD, or the pad below on touch screens.</p>
+          <p class="hint">Everyone must be present before the Department will begin.</p>
         </div>
 
-        <div id="dpad" aria-hidden="true">
+        <!-- BRIEFING (Form 27B) -->
+        <div id="briefing-panel" class="hidden">
+          <p class="section-title">Form 27B — Hiding Declaration</p>
+          <p class="hint">Time remaining to file: <span id="briefing-timer">—</span></p>
+
+          <div id="briefing-hider" class="hidden">
+            <label>
+              Intended hiding location
+              <input id="form-location" maxlength="80" placeholder="e.g. behind the good curtains" />
+            </label>
+            <label>
+              Estimated time of discovery (minutes)
+              <input id="form-eta" type="number" min="0" max="999" placeholder="e.g. 12" />
+            </label>
+            <label class="checkbox-label"><input id="form-risk" type="checkbox" /> Risk assessment completed</label>
+            <label class="checkbox-label"><input id="form-vent" type="checkbox" /> Adequate ventilation confirmed</label>
+            <button id="submit-form-btn">Submit Declaration</button>
+            <p id="form-status" class="hint"></p>
+          </div>
+
+          <div id="briefing-seeker" class="hidden">
+            <p>The Department is processing hiding declarations. You may not view them.</p>
+            <p id="briefing-progress" class="hint"></p>
+          </div>
+        </div>
+
+        <!-- Obligation card banner (hiding + seeking phases) -->
+        <div id="card-banner" class="hidden">
+          <p class="card-label"></p>
+          <p class="card-text"></p>
+        </div>
+
+        <!-- Chaos card banner -->
+        <div id="chaos-banner" class="hidden">
+          <p class="chaos-label">⚡ CHAOS CARD</p>
+          <p class="chaos-text"></p>
+        </div>
+
+        <!-- Round result -->
+        <div id="result-banner" class="hidden"></div>
+
+        <!-- VIRTUAL MAP -->
+        <canvas id="board" width="512" height="384" class="hidden"></canvas>
+        <div id="dpad" class="hidden" aria-hidden="true">
           <button class="dpad-btn dpad-up" data-dx="0" data-dy="-1" aria-label="Move up">▲</button>
           <button class="dpad-btn dpad-left" data-dx="-1" data-dy="0" aria-label="Move left">◀</button>
           <button class="dpad-btn dpad-right" data-dx="1" data-dy="0" aria-label="Move right">▶</button>
           <button class="dpad-btn dpad-down" data-dx="0" data-dy="1" aria-label="Move down">▼</button>
         </div>
 
+        <!-- PHYSICAL MODE PANEL -->
+        <div id="physical-panel" class="hidden">
+          <div id="physical-hider" class="hidden">
+            <p class="hint">You are hiding somewhere real. This screen just keeps you in sync.</p>
+          </div>
+          <div id="physical-seeker" class="hidden">
+            <div id="accuse-box" class="hidden">
+              <label>
+                Formally accuse an innocent object first
+                <input id="accuse-input" maxlength="60" placeholder="e.g. the standing lamp" />
+              </label>
+              <button id="accuse-btn">Formally Accuse</button>
+            </div>
+            <p class="section-title">Suspects at Large</p>
+            <ul id="found-roster"></ul>
+          </div>
+        </div>
+
+        <!-- FOI response panel (seeker, or recap once the round ends) -->
+        <div id="foi-panel" class="hidden">
+          <p class="section-title">Freedom of Information Response</p>
+          <div id="foi-list"></div>
+        </div>
+
+        <!-- Seeker election (chaos card) -->
+        <div id="election-panel" class="hidden">
+          <p class="section-title">Emergency Election: New Seeker</p>
+          <div id="election-candidates"></div>
+        </div>
+
+        <div id="controls">
+          <button id="restart-btn" class="hidden">Play Again</button>
+          <p class="hint" id="controls-hint">Arrow keys / WASD, or the pad below on touch screens.</p>
+        </div>
+
         <ul id="player-list"></ul>
       </section>
     </main>
+
+    <!-- Formal Discovery / Tribunal modal -->
+    <div id="dispute-modal" class="modal-overlay hidden">
+      <div class="modal">
+        <div id="dispute-accused" class="hidden">
+          <p class="section-title">Formal Discovery</p>
+          <p>You have been sighted and formally discovered. How do you respond?</p>
+          <button id="dispute-accept-btn" class="secondary-btn">Accept Fate</button>
+          <p class="hint">Or file an appeal:</p>
+          <div id="appeal-reasons"></div>
+          <input id="appeal-custom" maxlength="120" placeholder="Or write your own defence…" />
+          <button id="appeal-submit-btn">File Appeal</button>
+        </div>
+        <div id="dispute-seeker" class="hidden">
+          <p class="section-title">Case Under Review</p>
+          <p id="dispute-seeker-text"></p>
+        </div>
+        <div id="dispute-juror" class="hidden">
+          <p class="section-title">Tribunal</p>
+          <p id="dispute-juror-text"></p>
+          <div id="juror-vote-buttons">
+            <button id="vote-uphold-btn" class="secondary-btn">Uphold Appeal</button>
+            <button id="vote-reject-btn">Reject Appeal</button>
+          </div>
+          <p id="juror-voted-text" class="hint hidden">Vote recorded. Awaiting the rest of the tribunal.</p>
+        </div>
+      </div>
+    </div>
 
     <script src="/game.js"></script>
   </body>
