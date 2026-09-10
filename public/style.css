@@ -51,7 +51,7 @@ h1 {
 
 main {
   width: 100%;
-  max-width: 560px;
+  max-width: 760px;
   margin-top: 24px;
 }
 
@@ -280,13 +280,11 @@ button:disabled {
 canvas {
   display: block;
   width: 100%;
-  max-width: 512px;
-  aspect-ratio: 4 / 3;
+  max-width: 760px;
   margin: 0 auto;
-  background: #0b0c11;
+  background: #0f2340;
   border: 1px solid var(--border);
   border-radius: 8px;
-  image-rendering: pixelated;
   touch-action: none;
 }
 

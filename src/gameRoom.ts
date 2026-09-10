@@ -1,19 +1,28 @@
 import type { Env } from './worker';
 
 // --- Map layout (virtual mode only) ------------------------------------
-// 16x12 grid. A handful of rectangular obstacles form hiding spots while
-// the outer ring is always kept open, so the map is never fully blocked.
-export const GRID_W = 16;
-export const GRID_H = 12;
+// 24x18 grid, laid out like an office floor plan (cubicle rows and filing
+// cabinet blocks). Blocks are kept within a 2-cell margin of every edge so
+// a double-wide perimeter corridor always stays open.
+export const GRID_W = 24;
+export const GRID_H = 18;
 
 const WALL_BLOCKS: [number, number, number, number][] = [
-  [2, 2, 4, 3],
-  [7, 2, 9, 4],
-  [12, 2, 13, 5],
-  [2, 6, 3, 9],
-  [6, 7, 9, 8],
-  [11, 7, 13, 9],
-  [5, 4, 6, 5],
+  [2, 2, 5, 3],
+  [9, 2, 12, 3],
+  [16, 2, 19, 3],
+  [2, 5, 4, 6],
+  [7, 5, 9, 6],
+  [14, 5, 16, 6],
+  [19, 5, 21, 6],
+  [2, 8, 5, 11],
+  [9, 8, 14, 9],
+  [9, 11, 14, 12],
+  [18, 8, 21, 11],
+  [2, 13, 4, 15],
+  [7, 13, 10, 15],
+  [13, 13, 16, 15],
+  [19, 13, 21, 15],
 ];
 
 const WALLS = new Set<string>();
@@ -27,8 +36,8 @@ const COLORS = ['#e6533c', '#3ca7e6', '#3ce695', '#e6c93c', '#c33ce6', '#e68a3c'
 
 // --- Timing --------------------------------------------------------------
 const BRIEFING_SECONDS = 25;
-const HIDING_SECONDS: Record<Mode, number> = { virtual: 15, physical: 45 };
-const SEEK_SECONDS: Record<Mode, number> = { virtual: 90, physical: 180 };
+const HIDING_SECONDS: Record<Mode, number> = { virtual: 18, physical: 45 };
+const SEEK_SECONDS: Record<Mode, number> = { virtual: 120, physical: 180 };
 const DISPUTE_RESPONSE_SECONDS = 15;
 const TRIBUNAL_VOTE_SECONDS = 12;
 const SEEKER_ELECTION_SECONDS = 15;

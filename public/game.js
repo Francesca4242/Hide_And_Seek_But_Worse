@@ -75,7 +75,8 @@
   const voteRejectBtn = $('vote-reject-btn');
   const jurorVotedText = $('juror-voted-text');
 
-  const CELL = 32;
+  const CELL = 30;
+  const MARGIN = 24; // reserves space for grid-reference labels (A, B, C… / 1, 2, 3…)
   const MOVE_COOLDOWN_MS = 110;
   const DPAD_REPEAT_MS = 130;
 
@@ -165,8 +166,8 @@
       if (msg.type === 'init') {
         myId = msg.id;
         grid = { w: msg.grid.w, h: msg.grid.h, walls: new Set(msg.grid.walls) };
-        canvas.width = grid.w * CELL;
-        canvas.height = grid.h * CELL;
+        canvas.width = grid.w * CELL + MARGIN;
+        canvas.height = grid.h * CELL + MARGIN;
       } else if (msg.type === 'state') {
         latestState = msg;
         render(msg);
@@ -519,39 +520,133 @@
     }
   }
 
+  function colLabel(i) {
+    return String.fromCharCode(65 + (i % 26));
+  }
+
   function drawBoard(s, me) {
-    ctx.fillStyle = '#0b0c11';
+    const ox = MARGIN;
+    const oy = MARGIN;
+    const w = grid.w * CELL;
+    const h = grid.h * CELL;
+
+    // Label strip background
+    ctx.fillStyle = '#0a1626';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = '#262a38';
-    for (const key of grid.walls) {
-      const [x, y] = key.split(',').map(Number);
-      ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
-    }
+    // Map field — blueprint blue
+    ctx.fillStyle = '#0f2340';
+    ctx.fillRect(ox, oy, w, h);
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    // Fine grid ruling
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(140,180,220,0.10)';
     for (let x = 0; x <= grid.w; x++) {
       ctx.beginPath();
-      ctx.moveTo(x * CELL, 0);
-      ctx.lineTo(x * CELL, grid.h * CELL);
+      ctx.moveTo(ox + x * CELL + 0.5, oy);
+      ctx.lineTo(ox + x * CELL + 0.5, oy + h);
       ctx.stroke();
     }
     for (let y = 0; y <= grid.h; y++) {
       ctx.beginPath();
-      ctx.moveTo(0, y * CELL);
-      ctx.lineTo(grid.w * CELL, y * CELL);
+      ctx.moveTo(ox, oy + y * CELL + 0.5);
+      ctx.lineTo(ox + w, oy + y * CELL + 0.5);
       ctx.stroke();
     }
 
+    // Section ruling every 4 columns / 3 rows, like a plan reference grid
+    ctx.strokeStyle = 'rgba(140,180,220,0.26)';
+    for (let x = 0; x <= grid.w; x += 4) {
+      ctx.beginPath();
+      ctx.moveTo(ox + x * CELL + 0.5, oy);
+      ctx.lineTo(ox + x * CELL + 0.5, oy + h);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= grid.h; y += 3) {
+      ctx.beginPath();
+      ctx.moveTo(ox, oy + y * CELL + 0.5);
+      ctx.lineTo(ox + w, oy + y * CELL + 0.5);
+      ctx.stroke();
+    }
+
+    // Grid reference labels
+    ctx.fillStyle = '#6f9bd1';
+    ctx.font = '10px "Courier New", monospace';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    for (let x = 0; x < grid.w; x++) {
+      ctx.fillText(colLabel(x), ox + x * CELL + CELL / 2, oy / 2);
+    }
+    ctx.textAlign = 'right';
+    for (let y = 0; y < grid.h; y++) {
+      ctx.fillText(String(y + 1), ox - 6, oy + y * CELL + CELL / 2);
+    }
+
+    // Walls as hatched "restricted zone" partitions
+    ctx.fillStyle = '#1c2e4a';
+    for (const key of grid.walls) {
+      const [x, y] = key.split(',').map(Number);
+      ctx.fillRect(ox + x * CELL, oy + y * CELL, CELL, CELL);
+    }
+    ctx.save();
+    ctx.strokeStyle = 'rgba(140,180,220,0.16)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const key of grid.walls) {
+      const [x, y] = key.split(',').map(Number);
+      const px = ox + x * CELL;
+      const py = oy + y * CELL;
+      ctx.moveTo(px, py + CELL);
+      ctx.lineTo(px + CELL, py);
+    }
+    ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(140,180,220,0.3)';
+    ctx.lineWidth = 1;
+    for (const key of grid.walls) {
+      const [x, y] = key.split(',').map(Number);
+      ctx.strokeRect(ox + x * CELL + 0.5, oy + y * CELL + 0.5, CELL - 1, CELL - 1);
+    }
+
+    // Faint diagonal watermark
+    ctx.save();
+    ctx.translate(ox + w / 2, oy + h / 2);
+    ctx.rotate(-Math.PI / 14);
+    ctx.fillStyle = 'rgba(140,180,220,0.07)';
+    ctx.font = `bold ${Math.round(w / 16)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('OFFICIAL FLOOR PLAN — DO NOT DISTRIBUTE', 0, 0);
+    ctx.restore();
+
+    // Dashed technical-drawing border
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = 'rgba(140,180,220,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(ox + 0.5, oy + 0.5, w - 1, h - 1);
+    ctx.setLineDash([]);
+
+    // Player tokens, styled like rubber-stamp impressions
     for (const p of s.players) {
-      const cx = p.x * CELL + CELL / 2;
-      const cy = p.y * CELL + CELL / 2;
+      const cx = ox + p.x * CELL + CELL / 2;
+      const cy = oy + p.y * CELL + CELL / 2;
 
       ctx.beginPath();
-      ctx.arc(cx, cy, CELL / 2 - 5, 0, Math.PI * 2);
+      ctx.arc(cx, cy, CELL / 2 - 6, 0, Math.PI * 2);
       ctx.fillStyle = p.found ? '#4a4e5c' : p.color;
       ctx.fill();
+
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, CELL / 2 - 3, 0, Math.PI * 2);
+      ctx.strokeStyle = p.found ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
       if (p.id === myId) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, CELL / 2 - 5, 0, Math.PI * 2);
         ctx.lineWidth = 2;
         ctx.strokeStyle = '#fff';
         ctx.stroke();
@@ -567,6 +662,7 @@
       ctx.fillStyle = '#e8e9ee';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
       ctx.fillText(p.name.slice(0, 10), cx, cy - CELL / 2 - 3);
     }
 
@@ -588,6 +684,7 @@
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
     ctx.fillText(text, canvas.width / 2, canvas.height - 13);
   }
 })();
