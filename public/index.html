@@ -64,6 +64,8 @@
           <span id="hud-phase">Phase: —</span>
           <span id="hud-timer">Time: —</span>
           <span id="hud-found">Found: 0/0</span>
+          <span id="hud-score">Compliance: 0</span>
+          <span id="hud-chits" class="hidden">Alibi Chits: 0</span>
         </div>
 
         <button id="notif-btn" class="secondary-btn">🔔 Enable Alerts</button>
@@ -178,6 +180,7 @@
         <div id="dispute-accused" class="hidden">
           <p class="section-title">Formal Discovery</p>
           <p>You have been sighted and formally discovered. How do you respond?</p>
+          <button id="dispute-alibi-btn" class="hidden">Present Alibi Chit</button>
           <button id="dispute-accept-btn" class="secondary-btn">Accept Fate</button>
           <p class="hint">Or file an appeal:</p>
           <div id="appeal-reasons"></div>
@@ -199,6 +202,16 @@
           </div>
           <p id="juror-voted-text" class="hint hidden">Vote recorded. Awaiting the rest of the tribunal.</p>
         </div>
+      </div>
+    </div>
+
+    <!-- Compliance Audit: a pop quiz about your own Form 27B -->
+    <div id="audit-modal" class="modal-overlay hidden">
+      <div class="modal">
+        <p class="section-title">Compliance Audit</p>
+        <p id="audit-question"></p>
+        <p class="hint">Time remaining: <span id="audit-timer">—</span></p>
+        <div id="audit-options"></div>
       </div>
     </div>
 

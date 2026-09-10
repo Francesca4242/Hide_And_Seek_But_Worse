@@ -642,9 +642,32 @@ canvas {
   font-size: 0.85rem;
 }
 
+#dispute-alibi-btn {
+  margin-bottom: 10px;
+  width: 100%;
+  background: var(--good);
+  color: #0b2318;
+}
+
 #dispute-accept-btn {
   margin-bottom: 14px;
   width: 100%;
+}
+
+#audit-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+#audit-options button {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-align: left;
+  font-weight: 400;
+  font-size: 0.85rem;
 }
 
 #appeal-submit-btn {

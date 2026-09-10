@@ -14,6 +14,8 @@
   const hudPhase = $('hud-phase');
   const hudTimer = $('hud-timer');
   const hudFound = $('hud-found');
+  const hudScore = $('hud-score');
+  const hudChits = $('hud-chits');
 
   const lobbyPanel = $('lobby-panel');
   const modeButtons = document.querySelectorAll('.mode-btn');
@@ -67,6 +69,7 @@
 
   const disputeModal = $('dispute-modal');
   const disputeAccused = $('dispute-accused');
+  const disputeAlibiBtn = $('dispute-alibi-btn');
   const disputeAcceptBtn = $('dispute-accept-btn');
   const appealReasons = $('appeal-reasons');
   const appealCustom = $('appeal-custom');
@@ -81,6 +84,11 @@
   const voteUpholdBtn = $('vote-uphold-btn');
   const voteRejectBtn = $('vote-reject-btn');
   const jurorVotedText = $('juror-voted-text');
+
+  const auditModal = $('audit-modal');
+  const auditQuestion = $('audit-question');
+  const auditTimer = $('audit-timer');
+  const auditOptions = $('audit-options');
 
   const CELL = 30;
   const MARGIN = 24; // reserves space for grid-reference labels (A, B, C… / 1, 2, 3…)
@@ -360,6 +368,7 @@
 
   // --- Dispute modal ---------------------------------------------------------
 
+  disputeAlibiBtn.addEventListener('click', () => send({ type: 'disputeResponse', action: 'alibi' }));
   disputeAcceptBtn.addEventListener('click', () => send({ type: 'disputeResponse', action: 'accept' }));
 
   appealSubmitBtn.addEventListener('click', () => {
@@ -407,6 +416,9 @@
     hudTimer.textContent = s.phase === 'seeking' && s.clockPaused
       ? 'Time: paused (bureaucracy in progress)'
       : `Time: ${fmtTimer(deadline)}`;
+    hudScore.textContent = `Compliance: ${s.score}`;
+    hudChits.classList.toggle('hidden', me.role !== 'hider');
+    hudChits.textContent = `Alibi Chits: ${s.alibiChits}`;
 
     renderLobby(s, me);
     renderBriefing(s, me);
@@ -418,6 +430,7 @@
     renderFoi(s);
     renderElection(s, me);
     renderDispute(s, me);
+    renderAudit(s);
     renderPlayerList(s);
 
     restartBtn.classList.toggle('hidden', s.phase !== 'ended');
@@ -550,7 +563,7 @@
         Estimated discovery: ${esc(f.eta)} min (non-binding) &middot;
         Risk assessment: ${f.risk ? 'Completed' : 'Not on file'} &middot;
         Ventilation: ${f.ventilation ? 'Confirmed' : 'Not on file'}</p>
-        <p class="foi-rating">Concealment rating: ${concealmentLabel(f.concealmentRating)} (${f.concealmentRating}%)</p>
+        <p class="foi-rating">Concealment rating: ${concealmentLabel(f.concealmentRating)} (${f.concealmentRating}%) &middot; Compliance Score: ${esc(f.score)}</p>
       </div>
     `).join('');
   }
@@ -592,6 +605,8 @@
     disputeJuror.classList.toggle('hidden', d.role !== 'juror');
 
     if (d.role === 'accused') {
+      disputeAlibiBtn.classList.toggle('hidden', !(d.alibiChits >= 1));
+      disputeAlibiBtn.textContent = `Present Alibi Chit (${d.alibiChits})`;
       appealReasons.innerHTML = '';
       for (const reason of d.reasons) {
         const btn = document.createElement('button');
@@ -617,6 +632,21 @@
     }
   }
 
+  function renderAudit(s) {
+    const a = s.pendingAudit;
+    auditModal.classList.toggle('hidden', !a);
+    if (!a) return;
+    auditQuestion.textContent = a.question;
+    auditTimer.textContent = fmtTimer(a.expiresAt);
+    auditOptions.innerHTML = '';
+    for (const option of a.options) {
+      const btn = document.createElement('button');
+      btn.textContent = option;
+      btn.addEventListener('click', () => send({ type: 'auditAnswer', choice: option }));
+      auditOptions.appendChild(btn);
+    }
+  }
+
   function renderPlayerList(s) {
     playerList.innerHTML = '';
     for (const p of s.players) {
@@ -626,7 +656,7 @@
       dot.style.background = p.color;
       li.appendChild(dot);
       const label = p.role === 'seeker' ? 'seeker' : p.found ? 'found' : 'hider';
-      li.appendChild(document.createTextNode(`${p.icon || ''} ${p.name} (${label})`));
+      li.appendChild(document.createTextNode(`${p.icon || ''} ${p.name} (${label}, ${p.score} pts)`));
       playerList.appendChild(li);
     }
   }

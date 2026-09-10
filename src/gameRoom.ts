@@ -56,10 +56,22 @@ const PING_VISIBLE_MS = 3_000;
 const IMMUNITY_MS = 6_000;
 const NEAR_SEEKER_RADIUS = 2;
 const VISION_RADIUS = 4; // chebyshev distance a seeker can spot hiders from, virtual mode
+const BLACKOUT_MS = 10_000;
+const BLACKOUT_RADIUS = 1;
+const FLOODLIGHT_MS = 4_000;
+const FREEZE_MS = 4_000;
+const FORM_SUBMIT_POINTS = 10;
+const AUDIT_PASS_POINTS = 15;
+const AUDIT_INTERVAL_MS = 25_000;
+const AUDIT_CHANCE = 0.5;
+const AUDIT_RESPONSE_MS = 10_000;
+const AUDIT_REVEAL_MS = 4_000;
 
 // --- Card decks ------------------------------------------------------------
 // "effect" is a machine-checked tag; null means the card is honour-system
-// flavour (mostly aimed at physical, in-person play).
+// flavour. Virtual mode only deals cards with a real effect (nobody's
+// there to notice if you ignore "pretend to be furniture" on a screen);
+// physical mode deals from the full deck since real people enforce it.
 interface Card {
   id: string;
   text: string;
@@ -72,7 +84,7 @@ const HIDING_CARDS: Card[] = [
   { id: 'noise', text: 'You must make a noise every 30 seconds. Silence may be construed as contempt.', effect: 'ping_30s' },
   { id: 'plain_sight', text: "You must hide in plain sight. We call this 'strategic non-concealment.'", effect: null },
   { id: 'stay_close', text: 'You must hide within 2 metres of the seeker. Proximity is not the same as cooperation.', effect: 'stay_near_seeker' },
-  { id: 'furniture', text: 'You must pretend to be furniture. Cabinet-level experience preferred.', effect: null },
+  { id: 'furniture', text: 'You must pretend to be furniture: hold perfectly still from the moment seeking begins, and you cannot be spotted from a distance — only found by touch.', effect: 'camouflage' },
 ];
 
 const SEEKING_CARDS: Card[] = [
@@ -81,14 +93,19 @@ const SEEKING_CARDS: Card[] = [
   { id: 'permission', text: 'You must ask permission before looking somewhere. Applications may take 6-8 weeks.', effect: null },
   { id: 'no_under', text: 'You cannot look under anything. Under-the-table dealings are strictly for management.', effect: null },
   { id: 'accuse_first', text: 'You must formally accuse an innocent object before your first arrest. Due process applies to lamps too.', effect: 'accuse_first' },
+  { id: 'tunnel_vision', text: 'Department-issued blinders are now mandatory. Your search radius is significantly reduced.', effect: 'reduced_vision' },
+  { id: 'sluggish', text: 'Budget cuts have halved your patrol speed. Every other step now goes unregistered.', effect: 'half_speed' },
 ];
 
 const CHAOS_CARDS: Card[] = [
   { id: 'swap', text: 'Everyone must swap hiding places, immediately. Call it a reorganisation.', effect: 'swap' },
   { id: 'seeker_hider', text: 'The seeker is reassigned to hiding duties, effective immediately. A lateral move, not a demotion.', effect: 'seeker_becomes_hider' },
   { id: 'elect', text: "The hiders must elect a new seeker. Democracy — it's in the manual somewhere.", effect: 'hiders_elect_seeker' },
-  { id: 'no_word', text: "The word 'hide' is now banned for the rest of the round. Try 'undergo voluntary invisibility.'", effect: null },
-  { id: 'together', text: 'All hiders must now hide together, in the same spot. Efficiency drive. Do not ask questions.', effect: null },
+  { id: 'together', text: 'All hiders must now cluster together, in the same general vicinity. Efficiency drive. Do not ask questions.', effect: 'together' },
+  { id: 'blackout', text: `BLACKOUT: a Department power-saving measure has reduced the seeker's visibility to almost nothing for ${BLACKOUT_MS / 1000} seconds.`, effect: 'blackout' },
+  { id: 'floodlight', text: `FLOODLIGHT: emergency lighting has been triggered. All hiders are illuminated to the seeker for ${FLOODLIGHT_MS / 1000} seconds.`, effect: 'floodlight' },
+  { id: 'freeze', text: `FREEZE! By order of the Department, nobody may move a muscle for ${FREEZE_MS / 1000} seconds. This is not a drill. Actually, it might be.`, effect: 'freeze' },
+  { id: 'third_person', text: 'By order of the Department, all players must now refer to themselves in the third person for the remainder of the round.', effect: null },
 ];
 
 const APPEAL_REASONS = [
@@ -98,14 +115,56 @@ const APPEAL_REASONS = [
   'The lighting in here was misleading.',
   'I was technically still hiding, just badly.',
   'This finding has not been through the correct channels.',
+  'You were clearly guessing.',
+  "I have a doctor's note excusing me from being found today.",
+  'The seeker exceeded their jurisdiction by looking there.',
+  'This is a case of mistaken identity.',
+  'I move to have this finding stricken from the record.',
+  'The rules were never read aloud at the start of the round, as required.',
 ];
 
-function dealCard(deck: Card[]): Card {
-  return deck[Math.floor(Math.random() * deck.length)];
+const APPEAL_UPHELD_LINES = [
+  'case dismissed.',
+  'the objection stands.',
+  'the Department regrets the inconvenience.',
+  'a partial victory for common sense.',
+];
+
+const APPEAL_REJECTED_LINES = [
+  'the finding stands.',
+  'the appeal is noted and ignored.',
+  'the paperwork was in order after all.',
+  'due process has been observed and is now concluded.',
+];
+
+function dealCard(deck: Card[], mechanicalOnly: boolean): Card {
+  const pool = mechanicalOnly ? deck.filter((c) => c.effect !== null) : deck;
+  const finalPool = pool.length > 0 ? pool : deck;
+  return finalPool[Math.floor(Math.random() * finalPool.length)];
+}
+
+function pickOne<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function pickRandomSubset<T>(arr: T[], n: number): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, Math.min(n, copy.length));
 }
 
 type Mode = 'virtual' | 'physical';
 type Phase = 'lobby' | 'briefing' | 'hiding' | 'seeking' | 'ended';
+
+interface PendingAudit {
+  field: 'location' | 'eta';
+  correct: string;
+  options: string[];
+  expiresAt: number;
+}
 
 interface Player {
   id: string;
@@ -123,6 +182,10 @@ interface Player {
   hasAccused: boolean;
   immuneUntil: number;
   pingedUntil: number;
+  moveSkip: boolean;
+  score: number;
+  alibiChits: number;
+  pendingAudit: PendingAudit | null;
 }
 
 interface HidingForm {
@@ -138,6 +201,7 @@ interface Dispute {
   stage: 'awaiting_response' | 'tribunal';
   reason: string | null;
   votes: Map<string, 'uphold' | 'reject'>;
+  availableReasons: string[];
 }
 
 interface PendingVote {
@@ -158,7 +222,9 @@ type TimerKind =
   | 'ping'
   | 'dispute_timeout'
   | 'tribunal_timeout'
-  | 'vote_timeout';
+  | 'vote_timeout'
+  | 'audit_check'
+  | 'audit_timeout';
 
 interface TimerEntry {
   at: number;
@@ -189,6 +255,8 @@ export class GameRoom {
   private dispute: Dispute | null = null;
   private pendingVote: PendingVote | null = null;
   private chaosEvent: { id: string; text: string; at: number; expiresAt: number } | null = null;
+  private chaosVisionUntil = 0;
+  private moveFreezeUntil = 0;
 
   private timers: TimerEntry[] = [];
 
@@ -225,6 +293,7 @@ export class GameRoom {
     const player: Player = {
       id, name, icon, x: spawn.x, y: spawn.y, color, role, found: false, foundAt: null, ready: false, ws,
       hidingCard: null, hasAccused: false, immuneUntil: 0, pingedUntil: 0,
+      moveSkip: false, score: 0, alibiChits: 0, pendingAudit: null,
     };
     this.players.set(id, player);
     this.joinOrder.push(id);
@@ -302,6 +371,7 @@ export class GameRoom {
       case 'disputeResponse': this.handleDisputeResponse(player, msg.action, msg.reason); break;
       case 'tribunalVote': this.handleTribunalVote(player, msg.vote); break;
       case 'vote': this.handleVote(player, msg.candidateId); break;
+      case 'auditAnswer': this.handleAuditAnswer(player, msg.choice); break;
     }
   }
 
@@ -332,6 +402,8 @@ export class GameRoom {
     this.seekingCard = null;
     this.seekStartedAt = 0;
     this.seekPausedAt = null;
+    this.chaosVisionUntil = 0;
+    this.moveFreezeUntil = 0;
     this.timers = [];
     for (const p of this.players.values()) {
       p.found = false;
@@ -340,6 +412,10 @@ export class GameRoom {
       p.hasAccused = false;
       p.immuneUntil = 0;
       p.pingedUntil = 0;
+      p.moveSkip = false;
+      p.alibiChits = 0;
+      p.pendingAudit = null;
+      // p.score intentionally NOT reset — it's a running total for the session.
     }
   }
 
@@ -381,12 +457,18 @@ export class GameRoom {
   private handleSubmitForm(player: Player, data: any) {
     if (this.phase !== 'briefing') return;
     if (player.role !== 'hider') return;
+    const firstSubmission = !this.forms.has(player.id);
     this.forms.set(player.id, {
       location: String(data.location ?? '').slice(0, 80).trim() || 'Unspecified',
       eta: Number.isFinite(data.eta) ? clamp(Math.round(data.eta), 0, 999) : 0,
       risk: !!data.risk,
       ventilation: !!data.ventilation,
     });
+    if (firstSubmission) {
+      player.score += FORM_SUBMIT_POINTS;
+      player.alibiChits += 1;
+      this.notice(player, `Form 27B received. +${FORM_SUBMIT_POINTS} Compliance Points, +1 Alibi Chit for your trouble.`);
+    }
     this.broadcastState();
   }
 
@@ -411,7 +493,7 @@ export class GameRoom {
       }
       for (const p of this.players.values()) {
         if (p.role !== 'hider') continue;
-        p.hidingCard = dealCard(HIDING_CARDS);
+        p.hidingCard = dealCard(HIDING_CARDS, this.mode === 'virtual');
         const spawn = p.hidingCard.effect === 'stay_near_seeker' && seeker
           ? this.findSpawnNear(seeker.x, seeker.y, NEAR_SEEKER_RADIUS)
           : this.findSpawn();
@@ -420,7 +502,7 @@ export class GameRoom {
       }
     } else {
       for (const p of this.players.values()) {
-        if (p.role === 'hider') p.hidingCard = dealCard(HIDING_CARDS);
+        if (p.role === 'hider') p.hidingCard = dealCard(HIDING_CARDS, false);
       }
     }
 
@@ -440,11 +522,15 @@ export class GameRoom {
 
     const seeker = this.seekerId ? this.players.get(this.seekerId) : null;
     if (seeker) seeker.hasAccused = false;
-    this.seekingCard = dealCard(SEEKING_CARDS);
+    this.seekingCard = dealCard(SEEKING_CARDS, this.mode === 'virtual');
 
     for (const p of this.players.values()) {
-      if (p.role === 'hider' && p.hidingCard?.effect === 'ping_30s') {
+      if (p.role !== 'hider') continue;
+      if (p.hidingCard?.effect === 'ping_30s') {
         this.scheduleTimer(PING_INTERVAL_MS, 'ping', { playerId: p.id });
+      }
+      if (this.forms.has(p.id)) {
+        this.scheduleTimer(AUDIT_INTERVAL_MS, 'audit_check', { playerId: p.id });
       }
     }
 
@@ -496,6 +582,13 @@ export class GameRoom {
     if (player.found) return;
     if (this.dispute && (this.dispute.accusedId === player.id || this.dispute.seekerId === player.id)) return;
     if (player.role === 'seeker' && this.phase === 'hiding') return; // frozen while hiders scatter
+    if (Date.now() < this.moveFreezeUntil) return; // CHAOS CARD: freeze
+    if (this.phase === 'seeking' && player.role === 'hider' && player.hidingCard?.effect === 'camouflage') return;
+
+    if (player.role === 'seeker' && this.seekingCard?.effect === 'half_speed') {
+      player.moveSkip = !player.moveSkip;
+      if (player.moveSkip) return; // every other attempt is dropped
+    }
 
     let dx = Math.sign(rawDx);
     let dy = Math.sign(rawDy);
@@ -536,6 +629,10 @@ export class GameRoom {
     if (this.mode !== 'physical') return;
     if (seeker.id !== this.seekerId) return;
     if (this.phase !== 'seeking') return;
+    if (Date.now() < this.moveFreezeUntil) {
+      this.notice(seeker, 'Everyone must freeze. No arrests until it lifts.');
+      return;
+    }
     this.tryOpenDisputeAgainst(seeker.id, targetId);
   }
 
@@ -570,7 +667,10 @@ export class GameRoom {
 
   private openDispute(accusedId: string) {
     if (this.dispute || !this.seekerId) return;
-    this.dispute = { accusedId, seekerId: this.seekerId, stage: 'awaiting_response', reason: null, votes: new Map() };
+    this.dispute = {
+      accusedId, seekerId: this.seekerId, stage: 'awaiting_response', reason: null,
+      votes: new Map(), availableReasons: pickRandomSubset(APPEAL_REASONS, 4),
+    };
     this.seekPausedAt = Date.now();
     this.scheduleTimer(DISPUTE_RESPONSE_SECONDS * 1000, 'dispute_timeout');
 
@@ -581,9 +681,25 @@ export class GameRoom {
     this.broadcastState();
   }
 
-  private handleDisputeResponse(player: Player, action: 'accept' | 'appeal', reason?: string) {
+  private handleDisputeResponse(player: Player, action: 'accept' | 'appeal' | 'alibi', reason?: string) {
     if (!this.dispute || this.dispute.accusedId !== player.id) return;
     if (this.dispute.stage !== 'awaiting_response') return;
+
+    if (action === 'alibi') {
+      if (player.alibiChits < 1) {
+        this.notice(player, 'You have no Alibi Chits on file.');
+        return;
+      }
+      this.clearTimers('dispute_timeout');
+      player.alibiChits -= 1;
+      player.immuneUntil = Date.now() + IMMUNITY_MS;
+      this.broadcastNotice(`${player.name} presents a Pre-Approved Alibi Chit. The finding is withdrawn, no questions asked.`);
+      this.dispute = null;
+      this.resumeClockIfPaused();
+      this.broadcastState();
+      return;
+    }
+
     this.clearTimers('dispute_timeout');
 
     if (action === 'accept') {
@@ -608,6 +724,8 @@ export class GameRoom {
 
     this.scheduleTimer(TRIBUNAL_VOTE_SECONDS * 1000, 'tribunal_timeout');
     this.broadcastNotice(`${player.name} has filed an appeal: "${clean}" — cast your vote!`);
+    // Appeals are dramatic occasions: a chaos card is drawn on the spot.
+    this.drawChaosCard();
     this.broadcastState();
   }
 
@@ -648,12 +766,12 @@ export class GameRoom {
     if (upheld) {
       const accused = this.players.get(this.dispute.accusedId);
       if (accused) accused.immuneUntil = Date.now() + IMMUNITY_MS;
-      this.broadcastNotice(`Appeal upheld (${uphold}-${reject}): "${this.dispute.reason}" — case dismissed.`);
+      this.broadcastNotice(`Appeal upheld (${uphold}-${reject}): "${this.dispute.reason}" — ${pickOne(APPEAL_UPHELD_LINES)}`);
       this.dispute = null;
       this.resumeClockIfPaused();
       this.broadcastState();
     } else {
-      this.broadcastNotice(`Appeal rejected (${reject}-${uphold}). The finding stands.`);
+      this.broadcastNotice(`Appeal rejected (${reject}-${uphold}): ${pickOne(APPEAL_REJECTED_LINES)}`);
       this.finalizeDispute(true);
     }
   }
@@ -681,7 +799,7 @@ export class GameRoom {
 
   private drawChaosCard() {
     if (this.phase !== 'seeking') return;
-    const card = dealCard(CHAOS_CARDS);
+    const card = dealCard(CHAOS_CARDS, false);
     this.chaosEvent = { id: `${card.id}:${Date.now()}`, text: card.text, at: Date.now(), expiresAt: Date.now() + 8000 };
     this.applyChaosEffect(card);
     this.broadcastNotice(`CHAOS CARD: ${card.text}`);
@@ -702,6 +820,31 @@ export class GameRoom {
             p.y = spawn.y;
           }
         }
+        break;
+      case 'together':
+        if (this.mode === 'virtual') {
+          const unfound = [...this.players.values()].filter((p) => p.role === 'hider' && !p.found);
+          if (unfound.length > 1) {
+            const anchor = unfound[Math.floor(Math.random() * unfound.length)];
+            for (const p of unfound) {
+              if (p.id === anchor.id) continue;
+              const spot = this.findSpawnNear(anchor.x, anchor.y, NEAR_SEEKER_RADIUS);
+              p.x = spot.x;
+              p.y = spot.y;
+            }
+          }
+        }
+        break;
+      case 'blackout':
+        this.chaosVisionUntil = Date.now() + BLACKOUT_MS;
+        break;
+      case 'floodlight':
+        for (const p of this.players.values()) {
+          if (p.role === 'hider' && !p.found) p.pingedUntil = Date.now() + FLOODLIGHT_MS;
+        }
+        break;
+      case 'freeze':
+        this.moveFreezeUntil = Date.now() + FREEZE_MS;
         break;
       case 'seeker_becomes_hider':
         this.reassignSeekerRandomly();
@@ -817,6 +960,11 @@ export class GameRoom {
     void this.resyncAlarm();
   }
 
+  private clearTimerForPlayer(kind: TimerKind, playerId: string) {
+    this.timers = this.timers.filter((t) => !(t.kind === kind && t.payload?.playerId === playerId));
+    void this.resyncAlarm();
+  }
+
   private adjustTimerAt(kind: TimerKind, deltaMs: number) {
     const entry = this.timers.find((t) => t.kind === kind);
     if (entry) entry.at += deltaMs;
@@ -867,6 +1015,8 @@ export class GameRoom {
       case 'dispute_timeout': this.resolveDisputeTimeout(); break;
       case 'tribunal_timeout': this.resolveTribunal(); break;
       case 'vote_timeout': this.tallySeekerVote(); break;
+      case 'audit_check': this.auditCheck(t.payload.playerId); break;
+      case 'audit_timeout': this.auditTimeoutFor(t.payload.playerId); break;
     }
   }
 
@@ -877,6 +1027,75 @@ export class GameRoom {
     p.pingedUntil = Date.now() + PING_VISIBLE_MS;
     this.broadcastState();
     this.scheduleTimer(PING_INTERVAL_MS, 'ping', { playerId });
+  }
+
+  // --- Departmental Audits: pop quizzes on your own Form 27B --------------
+
+  private auditQuestionText(field: 'location' | 'eta'): string {
+    return field === 'location'
+      ? 'What did you declare as your intended hiding location on Form 27B?'
+      : 'What did you declare as your Estimated Time of Discovery (minutes) on Form 27B?';
+  }
+
+  private auditCheck(playerId: string) {
+    if (this.phase !== 'seeking') return;
+    const p = this.players.get(playerId);
+    if (!p || p.role !== 'hider' || p.found || p.pendingAudit) {
+      if (p && !p.found) this.scheduleTimer(AUDIT_INTERVAL_MS, 'audit_check', { playerId });
+      return;
+    }
+    const form = this.forms.get(playerId);
+    if (!form || Math.random() > AUDIT_CHANCE) {
+      this.scheduleTimer(AUDIT_INTERVAL_MS, 'audit_check', { playerId });
+      return;
+    }
+
+    const field: 'location' | 'eta' = Math.random() < 0.5 ? 'location' : 'eta';
+    const correct = field === 'location' ? form.location : String(form.eta);
+    const decoyPool = [...new Set(
+      [...this.forms.values()]
+        .map((f) => (field === 'location' ? f.location : String(f.eta)))
+        .filter((v) => v !== correct)
+    )];
+    const decoys = pickRandomSubset(decoyPool, 2);
+    const stockDecoys = field === 'location'
+      ? ['Behind the good curtains', 'Under a suspiciously large coat', 'The stationery cupboard']
+      : ['3', '12', '27'];
+    let d = 0;
+    while (decoys.length < 2) decoys.push(stockDecoys[d++ % stockDecoys.length]);
+
+    p.pendingAudit = { field, correct, options: pickRandomSubset([correct, ...decoys], 3), expiresAt: Date.now() + AUDIT_RESPONSE_MS };
+    this.scheduleTimer(AUDIT_RESPONSE_MS, 'audit_timeout', { playerId });
+    this.notice(p, `Compliance Audit: ${this.auditQuestionText(field)} Answer within ${AUDIT_RESPONSE_MS / 1000} seconds.`);
+    this.broadcastState();
+  }
+
+  private handleAuditAnswer(player: Player, choice: string) {
+    if (!player.pendingAudit) return;
+    const { field, correct } = player.pendingAudit;
+    this.clearTimerForPlayer('audit_timeout', player.id);
+    player.pendingAudit = null;
+
+    if (choice === correct) {
+      player.score += AUDIT_PASS_POINTS;
+      player.alibiChits += 1;
+      this.notice(player, `Audit passed: you correctly recalled your declared ${field === 'location' ? 'location' : 'ETA'}. +${AUDIT_PASS_POINTS} Compliance Points, +1 Alibi Chit.`);
+    } else {
+      player.pingedUntil = Date.now() + AUDIT_REVEAL_MS;
+      this.notice(player, 'Audit failed: your testimony was inconsistent. Your position has been logged.');
+    }
+    this.scheduleTimer(AUDIT_INTERVAL_MS, 'audit_check', { playerId: player.id });
+    this.broadcastState();
+  }
+
+  private auditTimeoutFor(playerId: string) {
+    const p = this.players.get(playerId);
+    if (!p || !p.pendingAudit) return;
+    p.pendingAudit = null;
+    p.pingedUntil = Date.now() + AUDIT_REVEAL_MS;
+    this.notice(p, 'Audit lapsed: no response filed. Your position has been logged by default.');
+    this.scheduleTimer(AUDIT_INTERVAL_MS, 'audit_check', { playerId });
+    this.broadcastState();
   }
 
   // --- Broadcasting with fog-of-war / FOI ---------------------------------
@@ -894,8 +1113,21 @@ export class GameRoom {
     }
 
     if (viewer.role === 'hider' && target.role === 'hider') return true;
+
+    if (target.hidingCard?.effect === 'camouflage') {
+      // Undetectable by proximity — only caught if the seeker lands on the exact tile.
+      return viewer.x === target.x && viewer.y === target.y;
+    }
+
+    const radius = viewer.role === 'seeker' ? this.effectiveVisionRadius() : VISION_RADIUS;
     const dist = Math.max(Math.abs(viewer.x - target.x), Math.abs(viewer.y - target.y));
-    return dist <= VISION_RADIUS;
+    return dist <= radius;
+  }
+
+  private effectiveVisionRadius(): number {
+    if (Date.now() < this.chaosVisionUntil) return BLACKOUT_RADIUS;
+    if (this.seekingCard?.effect === 'reduced_vision') return 2;
+    return VISION_RADIUS;
   }
 
   private redactName(name: string): string {
@@ -930,6 +1162,7 @@ export class GameRoom {
           risk: form ? form.risk : false,
           ventilation: form ? form.ventilation : false,
           concealmentRating: this.concealmentRating(p),
+          score: p.score,
         };
       });
   }
@@ -939,7 +1172,7 @@ export class GameRoom {
     const accused = this.players.get(this.dispute.accusedId);
     const base = { stage: this.dispute.stage, accusedName: accused?.name ?? 'Unknown', reason: this.dispute.reason };
     if (viewer.id === this.dispute.accusedId) {
-      return { ...base, role: 'accused' as const, reasons: APPEAL_REASONS };
+      return { ...base, role: 'accused' as const, reasons: this.dispute.availableReasons, alibiChits: viewer.alibiChits };
     }
     if (viewer.id === this.dispute.seekerId) {
       return { ...base, role: 'seeker' as const };
@@ -957,7 +1190,7 @@ export class GameRoom {
     const hiders = [...this.players.values()].filter((p) => p.role === 'hider');
     const players = [...this.players.values()]
       .filter((p) => this.isVisibleTo(viewer, p))
-      .map((p) => ({ id: p.id, name: p.name, icon: p.icon, x: p.x, y: p.y, color: p.color, role: p.role, found: p.found, ready: p.ready }));
+      .map((p) => ({ id: p.id, name: p.name, icon: p.icon, x: p.x, y: p.y, color: p.color, role: p.role, found: p.found, ready: p.ready, score: p.score }));
 
     const isSeeker = viewer.id === this.seekerId;
     const isHider = viewer.role === 'hider';
@@ -985,6 +1218,12 @@ export class GameRoom {
       hidingCard: isHider ? viewer.hidingCard : null,
       seekingCard: isSeeker ? this.seekingCard : null,
       youHaveAccused: isSeeker ? viewer.hasAccused : false,
+
+      score: viewer.score,
+      alibiChits: viewer.alibiChits,
+      pendingAudit: viewer.pendingAudit
+        ? { field: viewer.pendingAudit.field, options: viewer.pendingAudit.options, expiresAt: viewer.pendingAudit.expiresAt, question: this.auditQuestionText(viewer.pendingAudit.field) }
+        : null,
 
       foi: showFoi ? this.buildFoi(this.phase === 'ended') : null,
 
