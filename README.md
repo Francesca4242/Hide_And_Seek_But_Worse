@@ -63,6 +63,13 @@ account. Durable Objects here use the SQLite storage backend
 (`new_sqlite_classes` in `wrangler.toml`), which is available on Cloudflare's
 free Workers plan.
 
+## To do
+
+- **More hiding/seeking/chaos cards.** The three decks are small (6/5/5
+  cards), so with only a few hiders and short rounds the same cards come up
+  repeatedly. Needs a bigger pool of cards — and ideally a "no immediate
+  repeat" rule — so a run of several rounds doesn't feel samey.
+
 ## Ideas for extending it
 
 - Persist high scores or best hider survival times using the Durable

@@ -16,9 +16,13 @@
 
   const lobbyPanel = $('lobby-panel');
   const modeButtons = document.querySelectorAll('.mode-btn');
+  const readyBtn = $('ready-btn');
+  const readyProgress = $('ready-progress');
   const startBtn = $('start-btn');
   const restartBtn = $('restart-btn');
   const controlsHint = $('controls-hint');
+  const goOverlay = $('go-overlay');
+  const goText = $('go-text');
 
   const briefingPanel = $('briefing-panel');
   const briefingTimer = $('briefing-timer');
@@ -68,8 +72,10 @@
   const appealSubmitBtn = $('appeal-submit-btn');
   const disputeSeeker = $('dispute-seeker');
   const disputeSeekerText = $('dispute-seeker-text');
+  const disputeSeekerReason = $('dispute-seeker-reason');
   const disputeJuror = $('dispute-juror');
   const disputeJurorText = $('dispute-juror-text');
+  const disputeJurorReason = $('dispute-juror-reason');
   const jurorVoteButtons = $('juror-vote-buttons');
   const voteUpholdBtn = $('vote-uphold-btn');
   const voteRejectBtn = $('vote-reject-btn');
@@ -173,6 +179,8 @@
         render(msg);
       } else if (msg.type === 'notice') {
         alertEvent(msg.text);
+      } else if (msg.type === 'go') {
+        playGoSequence();
       }
     });
 
@@ -217,8 +225,31 @@
     });
   });
 
+  readyBtn.addEventListener('click', () => send({ type: 'toggleReady' }));
   startBtn.addEventListener('click', () => send({ type: 'start' }));
   restartBtn.addEventListener('click', () => send({ type: 'restart' }));
+
+  function playGoSequence() {
+    const steps = ['Ready…', 'Set…', 'Hide!'];
+    let i = 0;
+    goOverlay.classList.remove('hidden');
+    if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 250]);
+    beep();
+    const show = () => {
+      goText.textContent = steps[i];
+      goText.style.animation = 'none';
+      // eslint-disable-next-line no-unused-expressions
+      goText.offsetHeight; // restart the CSS animation
+      goText.style.animation = '';
+      i++;
+      if (i < steps.length) {
+        setTimeout(show, 650);
+      } else {
+        setTimeout(() => goOverlay.classList.add('hidden'), 700);
+      }
+    };
+    show();
+  }
 
   // --- Briefing form ---------------------------------------------------------
 
@@ -331,14 +362,17 @@
       : s.phase === 'hiding' ? s.hideDeadline
       : s.phase === 'seeking' ? s.seekDeadline
       : 0;
-    hudTimer.textContent = `Time: ${fmtTimer(deadline)}`;
+    hudTimer.textContent = s.phase === 'seeking' && s.clockPaused
+      ? 'Time: paused (bureaucracy in progress)'
+      : `Time: ${fmtTimer(deadline)}`;
 
-    renderLobby(s);
+    renderLobby(s, me);
     renderBriefing(s, me);
     renderCardBanner(s, me);
     renderChaosBanner(s);
     renderResultBanner(s);
     renderBoardAndPhysical(s, me);
+    renderAccuseBox(s, me);
     renderFoi(s);
     renderElection(s, me);
     renderDispute(s, me);
@@ -350,13 +384,23 @@
       : 'Arrow keys / WASD, or the pad below on touch screens.';
   }
 
-  function renderLobby(s) {
+  function renderLobby(s, me) {
     lobbyPanel.classList.toggle('hidden', s.phase !== 'lobby');
     startBtn.classList.toggle('hidden', s.phase !== 'lobby');
     if (s.phase !== 'lobby') return;
     modeButtons.forEach((btn) => btn.classList.toggle('selected', btn.dataset.mode === s.mode));
-    startBtn.disabled = s.players.length < 2;
-    startBtn.textContent = s.players.length < 2 ? 'Waiting for another player…' : 'Start Game';
+
+    const readyCount = s.players.filter((p) => p.ready).length;
+    readyBtn.classList.toggle('is-ready', !!me.ready);
+    readyBtn.textContent = me.ready ? 'Ready ✓ (tap to cancel)' : "I'm Ready";
+    readyProgress.textContent = `${readyCount}/${s.players.length} players ready.`;
+
+    startBtn.disabled = !s.allReady;
+    startBtn.textContent = s.players.length < 2
+      ? 'Waiting for another player…'
+      : s.allReady
+        ? 'Start Game'
+        : 'Waiting for everyone to be ready…';
   }
 
   function renderBriefing(s, me) {
@@ -424,9 +468,6 @@
       physicalHider.classList.toggle('hidden', isSeeker);
       physicalSeeker.classList.toggle('hidden', !isSeeker);
       if (isSeeker) {
-        const needsAccusation = s.phase === 'seeking' && s.seekingCard?.effect === 'accuse_first' && !s.youHaveAccused;
-        accuseBox.classList.toggle('hidden', !needsAccusation);
-
         foundRoster.innerHTML = '';
         for (const p of s.players) {
           if (p.role !== 'hider') continue;
@@ -448,6 +489,14 @@
     }
   }
 
+  // The "accuse an innocent object first" seeking card gate applies in
+  // both modes, so this lives outside the physical/virtual branches.
+  function renderAccuseBox(s, me) {
+    const needsAccusation = me.role === 'seeker' && s.phase === 'seeking'
+      && s.seekingCard?.effect === 'accuse_first' && !s.youHaveAccused;
+    accuseBox.classList.toggle('hidden', !needsAccusation);
+  }
+
   function renderFoi(s) {
     const show = !!s.foi && s.foi.length > 0;
     foiPanel.classList.toggle('hidden', !show);
@@ -459,8 +508,15 @@
         Estimated discovery: ${esc(f.eta)} min (non-binding) &middot;
         Risk assessment: ${f.risk ? 'Completed' : 'Not on file'} &middot;
         Ventilation: ${f.ventilation ? 'Confirmed' : 'Not on file'}</p>
+        <p class="foi-rating">Concealment rating: ${concealmentLabel(f.concealmentRating)} (${f.concealmentRating}%)</p>
       </div>
     `).join('');
+  }
+
+  function concealmentLabel(pct) {
+    const stars = Math.max(0, Math.min(5, Math.round(pct / 20)));
+    const labels = ['Amateur Hour', 'Rookie Numbers', 'Adequate', 'Solid Effort', 'Nearly Legendary', 'Legendary Concealment'];
+    return `${'★'.repeat(stars)}${'☆'.repeat(5 - stars)} ${labels[stars]}`;
   }
 
   function renderElection(s, me) {
@@ -505,6 +561,8 @@
       disputeSeekerText.textContent = d.stage === 'tribunal'
         ? `${d.accusedName} has appealed. The tribunal is voting.`
         : `Your finding of ${d.accusedName} is on file, pending their response.`;
+      disputeSeekerReason.classList.toggle('hidden', !d.reason);
+      if (d.reason) disputeSeekerReason.textContent = `Their appeal: "${d.reason}"`;
     } else if (d.role === 'juror') {
       const inTribunal = d.stage === 'tribunal';
       jurorVoteButtons.classList.toggle('hidden', !inTribunal || d.hasVoted);
@@ -512,6 +570,8 @@
       disputeJurorText.textContent = inTribunal
         ? `${d.accusedName} has appealed their discovery. Cast your vote.`
         : `A case is pending review against ${d.accusedName}.`;
+      disputeJurorReason.classList.toggle('hidden', !d.reason);
+      if (d.reason) disputeJurorReason.textContent = `Their appeal: "${d.reason}"`;
     }
   }
 

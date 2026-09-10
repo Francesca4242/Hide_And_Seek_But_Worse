@@ -241,6 +241,20 @@ button:disabled {
   background: rgba(230, 83, 60, 0.18);
 }
 
+#ready-btn {
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+#ready-btn.is-ready {
+  background: var(--good);
+  color: #0b2318;
+}
+
+#ready-progress {
+  margin-bottom: 10px;
+}
+
 /* Briefing form */
 #briefing-panel {
   margin-bottom: 16px;
@@ -607,4 +621,38 @@ canvas {
 
 #juror-vote-buttons button {
   flex: 1;
+}
+
+/* Ready / Set / Hide full-screen announcement */
+#go-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 12, 18, 0.92);
+  pointer-events: none;
+}
+
+#go-text {
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 14vw, 5rem);
+  letter-spacing: 0.04em;
+  color: var(--text);
+  text-transform: uppercase;
+  text-shadow: 0 0 24px rgba(230, 83, 60, 0.6);
+  animation: go-pulse 0.5s ease-out;
+}
+
+@keyframes go-pulse {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* FOI concealment rating */
+.foi-entry .foi-rating {
+  color: var(--khaki);
+  letter-spacing: 0.05em;
 }

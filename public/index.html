@@ -71,8 +71,10 @@
             <button class="mode-btn" data-mode="virtual">🌐 Remote<br /><small>Virtual map</small></button>
             <button class="mode-btn" data-mode="physical">🧍 In Person<br /><small>Physical hiding</small></button>
           </div>
+          <button id="ready-btn" class="secondary-btn">I'm Ready</button>
+          <p class="hint" id="ready-progress"></p>
           <button id="start-btn" class="hidden">Start Game</button>
-          <p class="hint">Everyone must be present before the Department will begin.</p>
+          <p class="hint">Everyone must declare themselves Ready before the Department will begin.</p>
         </div>
 
         <!-- BRIEFING (Form 27B) -->
@@ -116,6 +118,15 @@
         <!-- Round result -->
         <div id="result-banner" class="hidden"></div>
 
+        <!-- Formal accusation (required by the "accuse first" seeking card, any mode) -->
+        <div id="accuse-box" class="hidden">
+          <label>
+            Formally accuse an innocent object first
+            <input id="accuse-input" maxlength="60" placeholder="e.g. the standing lamp" />
+          </label>
+          <button id="accuse-btn">Formally Accuse</button>
+        </div>
+
         <!-- VIRTUAL MAP -->
         <canvas id="board" width="512" height="384" class="hidden"></canvas>
         <div id="dpad" class="hidden" aria-hidden="true">
@@ -131,13 +142,6 @@
             <p class="hint">You are hiding somewhere real. This screen just keeps you in sync.</p>
           </div>
           <div id="physical-seeker" class="hidden">
-            <div id="accuse-box" class="hidden">
-              <label>
-                Formally accuse an innocent object first
-                <input id="accuse-input" maxlength="60" placeholder="e.g. the standing lamp" />
-              </label>
-              <button id="accuse-btn">Formally Accuse</button>
-            </div>
             <p class="section-title">Suspects at Large</p>
             <ul id="found-roster"></ul>
           </div>
@@ -179,10 +183,12 @@
         <div id="dispute-seeker" class="hidden">
           <p class="section-title">Case Under Review</p>
           <p id="dispute-seeker-text"></p>
+          <p id="dispute-seeker-reason" class="hint hidden"></p>
         </div>
         <div id="dispute-juror" class="hidden">
           <p class="section-title">Tribunal</p>
           <p id="dispute-juror-text"></p>
+          <p id="dispute-juror-reason" class="hint hidden"></p>
           <div id="juror-vote-buttons">
             <button id="vote-uphold-btn" class="secondary-btn">Uphold Appeal</button>
             <button id="vote-reject-btn">Reject Appeal</button>
@@ -190,6 +196,11 @@
           <p id="juror-voted-text" class="hint hidden">Vote recorded. Awaiting the rest of the tribunal.</p>
         </div>
       </div>
+    </div>
+
+    <!-- Ready / Set / Hide announcement -->
+    <div id="go-overlay" class="hidden">
+      <span id="go-text"></span>
     </div>
 
     <script src="/game.js"></script>

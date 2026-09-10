@@ -107,6 +107,8 @@ interface Player {
   color: string;
   role: 'seeker' | 'hider';
   found: boolean;
+  foundAt: number | null;
+  ready: boolean;
   ws: WebSocket;
   hidingCard: Card | null;
   hasAccused: boolean;
@@ -169,6 +171,8 @@ export class GameRoom {
   private briefingDeadline = 0;
   private hideDeadline = 0;
   private seekDeadline = 0;
+  private seekStartedAt = 0;
+  private seekPausedAt: number | null = null;
   private lastResult: RoundResult | null = null;
 
   private forms = new Map<string, HidingForm>();
@@ -208,7 +212,7 @@ export class GameRoom {
     const color = COLORS[this.players.size % COLORS.length];
 
     const player: Player = {
-      id, name, x: spawn.x, y: spawn.y, color, role, found: false, ws,
+      id, name, x: spawn.x, y: spawn.y, color, role, found: false, foundAt: null, ready: false, ws,
       hidingCard: null, hasAccused: false, immuneUntil: 0, pingedUntil: 0,
     };
     this.players.set(id, player);
@@ -233,6 +237,7 @@ export class GameRoom {
       this.clearTimers('dispute_timeout');
       this.clearTimers('tribunal_timeout');
       this.dispute = null;
+      this.resumeClockIfPaused();
     }
 
     if (this.players.size === 0) {
@@ -256,6 +261,7 @@ export class GameRoom {
       this.seekerId = this.joinOrder[0];
       for (const p of this.players.values()) {
         p.found = false;
+        p.ready = false;
         p.role = p.id === this.seekerId ? 'seeker' : 'hider';
       }
     }
@@ -275,6 +281,7 @@ export class GameRoom {
 
     switch (msg?.type) {
       case 'setMode': this.handleSetMode(msg.mode); break;
+      case 'toggleReady': this.handleToggleReady(player); break;
       case 'start': this.handleStart(msg.mode); break;
       case 'restart': this.handleRestart(); break;
       case 'submitForm': this.handleSubmitForm(player, msg); break;
@@ -296,15 +303,28 @@ export class GameRoom {
     this.broadcastState();
   }
 
+  private handleToggleReady(player: Player) {
+    if (this.phase !== 'lobby') return;
+    player.ready = !player.ready;
+    this.broadcastState();
+  }
+
+  private allPlayersReady(): boolean {
+    return this.players.size >= 2 && [...this.players.values()].every((p) => p.ready);
+  }
+
   private resetRoundState() {
     this.forms.clear();
     this.dispute = null;
     this.pendingVote = null;
     this.chaosEvent = null;
     this.seekingCard = null;
+    this.seekStartedAt = 0;
+    this.seekPausedAt = null;
     this.timers = [];
     for (const p of this.players.values()) {
       p.found = false;
+      p.foundAt = null;
       p.hidingCard = null;
       p.hasAccused = false;
       p.immuneUntil = 0;
@@ -314,7 +334,7 @@ export class GameRoom {
 
   private handleStart(mode?: string) {
     if (this.phase !== 'lobby' && this.phase !== 'ended') return;
-    if (this.players.size < 2) return;
+    if (!this.allPlayersReady()) return;
     if (mode === 'virtual' || mode === 'physical') this.mode = mode;
 
     this.resetRoundState();
@@ -337,6 +357,7 @@ export class GameRoom {
     for (const p of this.players.values()) {
       p.role = p.id === this.seekerId ? 'seeker' : 'hider';
       p.found = false;
+      p.ready = false;
     }
 
     this.phase = 'lobby';
@@ -394,6 +415,7 @@ export class GameRoom {
 
     this.scheduleTimer(secs * 1000, 'hiding_end');
     this.broadcastNotice('Hiding phase has begun. Hiders, assume your positions. The Department wishes you a productive disappearance.');
+    this.broadcastGo();
     this.broadcastState();
   }
 
@@ -402,6 +424,7 @@ export class GameRoom {
     this.phase = 'seeking';
     const secs = SEEK_SECONDS[this.mode];
     this.seekDeadline = Date.now() + secs * 1000;
+    this.seekStartedAt = Date.now();
     this.scheduleTimer(secs * 1000, 'seek_end');
 
     const seeker = this.seekerId ? this.players.get(this.seekerId) : null;
@@ -537,6 +560,7 @@ export class GameRoom {
   private openDispute(accusedId: string) {
     if (this.dispute || !this.seekerId) return;
     this.dispute = { accusedId, seekerId: this.seekerId, stage: 'awaiting_response', reason: null, votes: new Map() };
+    this.seekPausedAt = Date.now();
     this.scheduleTimer(DISPUTE_RESPONSE_SECONDS * 1000, 'dispute_timeout');
 
     const accused = this.players.get(accusedId);
@@ -615,6 +639,7 @@ export class GameRoom {
       if (accused) accused.immuneUntil = Date.now() + IMMUNITY_MS;
       this.broadcastNotice(`Appeal upheld (${uphold}-${reject}): "${this.dispute.reason}" — case dismissed.`);
       this.dispute = null;
+      this.resumeClockIfPaused();
       this.broadcastState();
     } else {
       this.broadcastNotice(`Appeal rejected (${reject}-${uphold}). The finding stands.`);
@@ -626,9 +651,11 @@ export class GameRoom {
     if (!this.dispute) return;
     const accused = this.players.get(this.dispute.accusedId);
     this.dispute = null;
+    this.resumeClockIfPaused();
 
     if (accused && markFound) {
       accused.found = true;
+      accused.foundAt = Date.now();
       const hiders = [...this.players.values()].filter((p) => p.role === 'hider');
       const found = hiders.filter((p) => p.found).length;
       if (hiders.length > 0 && found >= hiders.length) {
@@ -697,6 +724,7 @@ export class GameRoom {
     newSeeker.hasAccused = false;
     this.seekerId = newSeeker.id;
     this.dispute = null;
+    this.resumeClockIfPaused();
     this.broadcastNotice(`${newSeeker.name} has been reassigned to Seeking duties by order of the Department. Congratulations, or condolences.`);
   }
 
@@ -761,6 +789,7 @@ export class GameRoom {
     newSeeker.hasAccused = false;
     this.seekerId = newSeeker.id;
     this.dispute = null;
+    this.resumeClockIfPaused();
     this.broadcastNotice(`${newSeeker.name} has been elected the new Seeker. A landslide, a mandate, a formality — take your pick.`);
     this.broadcastState();
   }
@@ -775,6 +804,24 @@ export class GameRoom {
   private clearTimers(kind: TimerKind) {
     this.timers = this.timers.filter((t) => t.kind !== kind);
     void this.resyncAlarm();
+  }
+
+  private adjustTimerAt(kind: TimerKind, deltaMs: number) {
+    const entry = this.timers.find((t) => t.kind === kind);
+    if (entry) entry.at += deltaMs;
+    void this.resyncAlarm();
+  }
+
+  // Formal discovery / tribunal proceedings pause the round clock: the seek
+  // timer is extended by however long the case took to resolve, so disputes
+  // never eat into a hider's actual hiding time.
+  private resumeClockIfPaused() {
+    if (this.seekPausedAt === null) return;
+    const elapsed = Date.now() - this.seekPausedAt;
+    this.seekPausedAt = null;
+    if (elapsed <= 0) return;
+    this.seekDeadline += elapsed;
+    this.adjustTimerAt('seek_end', elapsed);
   }
 
   private async resyncAlarm() {
@@ -845,6 +892,17 @@ export class GameRoom {
     return name[0] + '█'.repeat(Math.max(1, name.length - 1));
   }
 
+  // A hider's "concealment rating" is how much of the seek window they
+  // survived before being finalized as found (or 100% if never found).
+  private concealmentRating(p: Player): number {
+    if (this.seekStartedAt <= 0) return 0;
+    const totalMs = SEEK_SECONDS[this.mode] * 1000;
+    if (totalMs <= 0) return 0;
+    const endAt = p.found && p.foundAt ? p.foundAt : Date.now();
+    const elapsed = endAt - this.seekStartedAt;
+    return Math.max(0, Math.min(100, Math.round((elapsed / totalMs) * 100)));
+  }
+
   private buildFoi(revealAll: boolean) {
     return [...this.players.values()]
       .filter((p) => p.role === 'hider')
@@ -859,6 +917,7 @@ export class GameRoom {
           eta: form ? form.eta : 0,
           risk: form ? form.risk : false,
           ventilation: form ? form.ventilation : false,
+          concealmentRating: this.concealmentRating(p),
         };
       });
   }
@@ -866,7 +925,7 @@ export class GameRoom {
   private buildDisputeView(viewer: Player) {
     if (!this.dispute) return null;
     const accused = this.players.get(this.dispute.accusedId);
-    const base = { stage: this.dispute.stage, accusedName: accused?.name ?? 'Unknown' };
+    const base = { stage: this.dispute.stage, accusedName: accused?.name ?? 'Unknown', reason: this.dispute.reason };
     if (viewer.id === this.dispute.accusedId) {
       return { ...base, role: 'accused' as const, reasons: APPEAL_REASONS };
     }
@@ -886,10 +945,11 @@ export class GameRoom {
     const hiders = [...this.players.values()].filter((p) => p.role === 'hider');
     const players = [...this.players.values()]
       .filter((p) => this.isVisibleTo(viewer, p))
-      .map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, color: p.color, role: p.role, found: p.found }));
+      .map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, color: p.color, role: p.role, found: p.found, ready: p.ready }));
 
     const isSeeker = viewer.id === this.seekerId;
     const isHider = viewer.role === 'hider';
+    const showFoi = this.phase === 'ended' || (isSeeker && this.phase === 'seeking');
 
     return {
       type: 'state',
@@ -900,6 +960,8 @@ export class GameRoom {
       briefingDeadline: this.briefingDeadline,
       hideDeadline: this.hideDeadline,
       seekDeadline: this.seekDeadline,
+      clockPaused: this.seekPausedAt !== null,
+      allReady: this.allPlayersReady(),
       players,
       foundCount: hiders.filter((p) => p.found).length,
       totalHiders: hiders.length,
@@ -912,7 +974,7 @@ export class GameRoom {
       seekingCard: isSeeker ? this.seekingCard : null,
       youHaveAccused: isSeeker ? viewer.hasAccused : false,
 
-      foi: isSeeker || this.phase === 'ended' ? this.buildFoi(this.phase === 'ended') : null,
+      foi: showFoi ? this.buildFoi(this.phase === 'ended') : null,
 
       chaosEvent: this.chaosEvent,
       dispute: this.buildDisputeView(viewer),
@@ -930,6 +992,10 @@ export class GameRoom {
 
   private notice(player: Player, text: string) {
     this.send(player.ws, { type: 'notice', text });
+  }
+
+  private broadcastGo() {
+    for (const p of this.players.values()) this.send(p.ws, { type: 'go' });
   }
 
   private broadcastNotice(text: string) {
