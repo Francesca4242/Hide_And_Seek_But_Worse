@@ -59,28 +59,28 @@ interface Card {
 }
 
 const HIDING_CARDS: Card[] = [
-  { id: 'yellow', text: 'You must hide somewhere yellow.', effect: null },
-  { id: 'visible', text: 'You must remain visible at all times.', effect: 'always_visible' },
-  { id: 'noise', text: 'You must make a noise every 30 seconds.', effect: 'ping_30s' },
-  { id: 'plain_sight', text: 'You must hide in plain sight.', effect: null },
-  { id: 'stay_close', text: 'You must hide within 2 metres of the seeker.', effect: 'stay_near_seeker' },
-  { id: 'furniture', text: 'You must pretend to be furniture.', effect: null },
+  { id: 'yellow', text: "You must hide somewhere yellow. No, we don't know why either — it's in the bylaws.", effect: null },
+  { id: 'visible', text: 'You must remain visible at all times. Transparency is this Department’s middle name.', effect: 'always_visible' },
+  { id: 'noise', text: 'You must make a noise every 30 seconds. Silence may be construed as contempt.', effect: 'ping_30s' },
+  { id: 'plain_sight', text: "You must hide in plain sight. We call this 'strategic non-concealment.'", effect: null },
+  { id: 'stay_close', text: 'You must hide within 2 metres of the seeker. Proximity is not the same as cooperation.', effect: 'stay_near_seeker' },
+  { id: 'furniture', text: 'You must pretend to be furniture. Cabinet-level experience preferred.', effect: null },
 ];
 
 const SEEKING_CARDS: Card[] = [
-  { id: 'backwards', text: 'You may only walk backwards.', effect: 'invert_controls' },
-  { id: 'documentary', text: 'You must narrate your search like a wildlife documentary.', effect: null },
-  { id: 'permission', text: 'You must ask permission before looking somewhere.', effect: null },
-  { id: 'no_under', text: 'You cannot look under anything.', effect: null },
-  { id: 'accuse_first', text: 'You must formally accuse an innocent object before your first arrest.', effect: 'accuse_first' },
+  { id: 'backwards', text: 'You may only walk backwards. Progress, like this Department, moves in reverse.', effect: 'invert_controls' },
+  { id: 'documentary', text: 'You must narrate your search like a wildlife documentary. David Attenborough was unavailable for comment.', effect: null },
+  { id: 'permission', text: 'You must ask permission before looking somewhere. Applications may take 6-8 weeks.', effect: null },
+  { id: 'no_under', text: 'You cannot look under anything. Under-the-table dealings are strictly for management.', effect: null },
+  { id: 'accuse_first', text: 'You must formally accuse an innocent object before your first arrest. Due process applies to lamps too.', effect: 'accuse_first' },
 ];
 
 const CHAOS_CARDS: Card[] = [
-  { id: 'swap', text: 'Everyone must swap hiding places, immediately.', effect: 'swap' },
-  { id: 'seeker_hider', text: 'The seeker is reassigned to hiding duties. A new seeker is appointed.', effect: 'seeker_becomes_hider' },
-  { id: 'elect', text: 'The hiders must elect a new seeker.', effect: 'hiders_elect_seeker' },
-  { id: 'no_word', text: 'The word "hide" is now banned for the rest of the round.', effect: null },
-  { id: 'together', text: 'All hiders must now hide together, in the same spot.', effect: null },
+  { id: 'swap', text: 'Everyone must swap hiding places, immediately. Call it a reorganisation.', effect: 'swap' },
+  { id: 'seeker_hider', text: 'The seeker is reassigned to hiding duties, effective immediately. A lateral move, not a demotion.', effect: 'seeker_becomes_hider' },
+  { id: 'elect', text: "The hiders must elect a new seeker. Democracy — it's in the manual somewhere.", effect: 'hiders_elect_seeker' },
+  { id: 'no_word', text: "The word 'hide' is now banned for the rest of the round. Try 'undergo voluntary invisibility.'", effect: null },
+  { id: 'together', text: 'All hiders must now hide together, in the same spot. Efficiency drive. Do not ask questions.', effect: null },
 ];
 
 const APPEAL_REASONS = [
@@ -89,6 +89,7 @@ const APPEAL_REASONS = [
   'I was partially behind the plant.',
   'The lighting in here was misleading.',
   'I was technically still hiding, just badly.',
+  'This finding has not been through the correct channels.',
 ];
 
 function dealCard(deck: Card[]): Card {
@@ -321,7 +322,7 @@ export class GameRoom {
     this.briefingDeadline = Date.now() + BRIEFING_SECONDS * 1000;
     this.scheduleTimer(BRIEFING_SECONDS * 1000, 'briefing_end');
     this.broadcastNotice(
-      'The Department has scheduled a new round. Hiders, please complete Form 27B (Hiding Declaration) within the allotted time.'
+      'The Department has scheduled a new round. Hiders, please complete Form 27B (Hiding Declaration) within the allotted time. Late filings will be logged under Wishful Thinking.'
     );
     this.broadcastState();
   }
@@ -392,7 +393,7 @@ export class GameRoom {
     }
 
     this.scheduleTimer(secs * 1000, 'hiding_end');
-    this.broadcastNotice('Hiding phase has begun. Hiders, assume your positions.');
+    this.broadcastNotice('Hiding phase has begun. Hiders, assume your positions. The Department wishes you a productive disappearance.');
     this.broadcastState();
   }
 
@@ -416,7 +417,7 @@ export class GameRoom {
     const delayMs = secs * 1000 * (CHAOS_MIN_FRACTION + Math.random() * (CHAOS_MAX_FRACTION - CHAOS_MIN_FRACTION));
     this.scheduleTimer(delayMs, 'chaos_draw');
 
-    this.broadcastNotice('Seeking phase has begun. The seeker has received an FOI response regarding hider whereabouts.');
+    this.broadcastNotice('Seeking phase has begun. The seeker has received an FOI response regarding hider whereabouts, redacted as per policy.');
     this.broadcastState();
   }
 
@@ -429,8 +430,8 @@ export class GameRoom {
     void this.resyncAlarm();
     this.broadcastNotice(
       reason === 'all_found'
-        ? `Round concluded: all hiders located (${found}/${total}).`
-        : `Round concluded: time expired (${found}/${total} located).`
+        ? `Round concluded: all hiders located (${found}/${total}). Case closed, file archived.`
+        : `Round concluded: time expired (${found}/${total} located). The remainder are hereby classified At Large.`
     );
     this.broadcastState();
   }
@@ -522,7 +523,7 @@ export class GameRoom {
     const target = this.players.get(targetId);
     if (!seeker || !target || target.role !== 'hider' || target.found) return false;
     if (Date.now() < target.immuneUntil) {
-      this.notice(seeker, `${target.name} currently holds statutory immunity from a recent dismissal.`);
+      this.notice(seeker, `${target.name} currently holds statutory immunity from a recent dismissal. Try again once it lapses.`);
       return false;
     }
     if (this.seekingCard?.effect === 'accuse_first' && !seeker.hasAccused) {
@@ -540,7 +541,7 @@ export class GameRoom {
 
     const accused = this.players.get(accusedId);
     const seeker = this.players.get(this.seekerId);
-    if (accused) this.notice(accused, 'You have been formally discovered. Respond within the statutory period.');
+    if (accused) this.notice(accused, 'You have been formally discovered. Respond within the statutory period, or forever hold your peace.');
     if (seeker && accused) this.notice(seeker, `Your finding of ${accused.name} is now on file, pending response.`);
     this.broadcastState();
   }
@@ -565,7 +566,7 @@ export class GameRoom {
     ).length;
 
     if (eligible === 0) {
-      this.broadcastNotice('No quorum available for tribunal. The objection is dismissed on a technicality.');
+      this.broadcastNotice('No quorum available for tribunal. The objection is dismissed on a technicality — the best kind of dismissal.');
       this.finalizeDispute(true);
       return;
     }
@@ -595,7 +596,7 @@ export class GameRoom {
 
   private resolveDisputeTimeout() {
     if (!this.dispute || this.dispute.stage !== 'awaiting_response') return;
-    this.broadcastNotice('No response filed within the statutory period. The finding stands by default.');
+    this.broadcastNotice('No response filed within the statutory period. Silence is deemed consent, per Form 27B, footnote 9.');
     this.finalizeDispute(true);
   }
 
@@ -696,7 +697,7 @@ export class GameRoom {
     newSeeker.hasAccused = false;
     this.seekerId = newSeeker.id;
     this.dispute = null;
-    this.broadcastNotice(`${newSeeker.name} has been reassigned to Seeking duties by order of the Department.`);
+    this.broadcastNotice(`${newSeeker.name} has been reassigned to Seeking duties by order of the Department. Congratulations, or condolences.`);
   }
 
   private startSeekerElection() {
@@ -704,7 +705,7 @@ export class GameRoom {
     if (hiders.length < 2) return;
     this.pendingVote = { votes: new Map() };
     this.scheduleTimer(SEEKER_ELECTION_SECONDS * 1000, 'vote_timeout');
-    this.broadcastNotice('Hiders must now elect a new Seeker by majority vote.');
+    this.broadcastNotice('Hiders must now elect a new Seeker by majority vote. Campaigning is discouraged but not, strictly speaking, banned.');
   }
 
   private handleVote(player: Player, candidateId: string) {
@@ -729,7 +730,7 @@ export class GameRoom {
     this.pendingVote = null;
 
     if (tally.size === 0) {
-      this.broadcastNotice('No votes were cast. The current Seeker remains in post.');
+      this.broadcastNotice('No votes were cast. The current Seeker remains in post, by voter apathy rather than merit.');
       this.broadcastState();
       return;
     }
@@ -760,7 +761,7 @@ export class GameRoom {
     newSeeker.hasAccused = false;
     this.seekerId = newSeeker.id;
     this.dispute = null;
-    this.broadcastNotice(`${newSeeker.name} has been elected the new Seeker.`);
+    this.broadcastNotice(`${newSeeker.name} has been elected the new Seeker. A landslide, a mandate, a formality — take your pick.`);
     this.broadcastState();
   }
 

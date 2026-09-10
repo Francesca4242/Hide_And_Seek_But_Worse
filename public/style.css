@@ -153,6 +153,39 @@ button:disabled {
   color: var(--muted);
 }
 
+#lore-panel {
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+#lore-panel p {
+  margin: 0 0 12px;
+}
+
+#lore-panel p:last-child {
+  margin-bottom: 0;
+}
+
+.lore-heading {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  letter-spacing: 0.03em;
+  color: var(--text);
+}
+
+.lore-sub {
+  font-style: italic;
+  color: var(--khaki);
+}
+
+.lore-motto {
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-size: 0.8rem;
+}
+
 #hud {
   display: flex;
   flex-wrap: wrap;
