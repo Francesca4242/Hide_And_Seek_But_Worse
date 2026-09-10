@@ -186,6 +186,24 @@ button:disabled {
   font-size: 0.8rem;
 }
 
+.wiki-link {
+  color: #6cb6ff;
+  text-decoration: none;
+  border-bottom: 1px dotted #6cb6ff;
+}
+
+.wiki-link:hover,
+.wiki-link:focus-visible {
+  color: #9ccfff;
+  text-decoration: none;
+  border-bottom-style: solid;
+}
+
+.wiki-link:visited {
+  color: #b48ce6;
+  border-bottom-color: #b48ce6;
+}
+
 #hud {
   display: flex;
   flex-wrap: wrap;
