@@ -199,6 +199,15 @@
     if (latestState) render(latestState);
   }, 500);
 
+  // Canvas text is drawn with the fallback font until the webfont finishes
+  // loading; force one redraw once it's ready so the map doesn't stay stuck
+  // looking like plain monospace.
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      if (latestState) render(latestState);
+    });
+  }
+
   // --- Lobby ---------------------------------------------------------------
 
   modeButtons.forEach((btn) => {
@@ -571,7 +580,7 @@
 
     // Grid reference labels
     ctx.fillStyle = '#6f9bd1';
-    ctx.font = '10px "Courier New", monospace';
+    ctx.font = '10px "Courier Prime", "Courier New", monospace';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
     for (let x = 0; x < grid.w; x++) {
@@ -613,7 +622,7 @@
     ctx.translate(ox + w / 2, oy + h / 2);
     ctx.rotate(-Math.PI / 14);
     ctx.fillStyle = 'rgba(140,180,220,0.07)';
-    ctx.font = `bold ${Math.round(w / 16)}px sans-serif`;
+    ctx.font = `${Math.round(w / 16)}px "Special Elite", "Courier New", monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('OFFICIAL FLOOR PLAN — DO NOT DISTRIBUTE', 0, 0);
@@ -660,7 +669,7 @@
       }
 
       ctx.fillStyle = '#e8e9ee';
-      ctx.font = '10px sans-serif';
+      ctx.font = 'bold 10px "Courier Prime", "Courier New", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
       ctx.fillText(p.name.slice(0, 10), cx, cy - CELL / 2 - 3);
@@ -682,7 +691,7 @@
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(0, canvas.height - 34, canvas.width, 34);
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 13px sans-serif';
+    ctx.font = 'bold 13px "Courier Prime", "Courier New", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(text, canvas.width / 2, canvas.height - 13);
