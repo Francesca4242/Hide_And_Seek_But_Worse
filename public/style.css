@@ -10,6 +10,11 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  overscroll-behavior-y: none;
 }
 
 body {
@@ -21,6 +26,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  overscroll-behavior-y: none;
 }
 
 header {
@@ -128,6 +134,7 @@ canvas {
   border: 1px solid var(--border);
   border-radius: 8px;
   image-rendering: pixelated;
+  touch-action: none;
 }
 
 #controls {
@@ -136,6 +143,52 @@ canvas {
   gap: 12px;
   margin-top: 14px;
   flex-wrap: wrap;
+}
+
+#dpad {
+  display: grid;
+  grid-template-columns: 56px 56px 56px;
+  grid-template-rows: 56px 56px 56px;
+  gap: 6px;
+  justify-content: center;
+  margin: 18px auto 0;
+  width: max-content;
+  touch-action: none;
+}
+
+.dpad-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 1.2rem;
+  line-height: 1;
+  background: #10121a;
+  border: 1px solid var(--border);
+  color: var(--text);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+.dpad-btn:active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.dpad-up { grid-column: 2; grid-row: 1; }
+.dpad-left { grid-column: 1; grid-row: 2; }
+.dpad-right { grid-column: 3; grid-row: 2; }
+.dpad-down { grid-column: 2; grid-row: 3; }
+
+@media (hover: hover) and (pointer: fine) {
+  #dpad {
+    opacity: 0.6;
+  }
+  #dpad:hover {
+    opacity: 1;
+  }
 }
 
 #player-list {

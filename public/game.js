@@ -13,9 +13,11 @@
   const hudTimer = document.getElementById('hud-timer');
   const hudFound = document.getElementById('hud-found');
   const playerList = document.getElementById('player-list');
+  const dpadButtons = document.querySelectorAll('.dpad-btn');
 
   const CELL = 32;
   const MOVE_COOLDOWN_MS = 110;
+  const DPAD_REPEAT_MS = 130;
 
   let ws = null;
   let myId = null;
@@ -28,6 +30,13 @@
     w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
     W: [0, -1], S: [0, 1], A: [-1, 0], D: [1, 0],
   };
+
+  function attemptMove(dx, dy) {
+    const now = performance.now();
+    if (now - lastMoveAt < MOVE_COOLDOWN_MS) return;
+    lastMoveAt = now;
+    send({ type: 'move', dx, dy });
+  }
 
   function connect(name, room) {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -72,10 +81,35 @@
     const dir = KEY_DIRS[evt.key];
     if (!dir) return;
     evt.preventDefault();
-    const now = performance.now();
-    if (now - lastMoveAt < MOVE_COOLDOWN_MS) return;
-    lastMoveAt = now;
-    send({ type: 'move', dx: dir[0], dy: dir[1] });
+    attemptMove(dir[0], dir[1]);
+  });
+
+  // Touch/mouse D-pad: fire immediately on press, then repeat while held,
+  // using Pointer Events so it works the same for touch, mouse, and pen.
+  dpadButtons.forEach((btn) => {
+    const dx = Number(btn.dataset.dx);
+    const dy = Number(btn.dataset.dy);
+    let repeatTimer = null;
+
+    const stop = () => {
+      if (repeatTimer) {
+        clearInterval(repeatTimer);
+        repeatTimer = null;
+      }
+    };
+
+    btn.addEventListener('pointerdown', (evt) => {
+      evt.preventDefault();
+      btn.setPointerCapture(evt.pointerId);
+      attemptMove(dx, dy);
+      stop();
+      repeatTimer = setInterval(() => attemptMove(dx, dy), DPAD_REPEAT_MS);
+    });
+
+    btn.addEventListener('pointerup', stop);
+    btn.addEventListener('pointercancel', stop);
+    btn.addEventListener('pointerleave', stop);
+    btn.addEventListener('contextmenu', (evt) => evt.preventDefault());
   });
 
   function send(payload) {

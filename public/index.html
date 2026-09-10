@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>Hide and Seek But Worse</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
@@ -39,7 +39,14 @@
         <div id="controls">
           <button id="start-btn" class="hidden">Start Game</button>
           <button id="restart-btn" class="hidden">Play Again</button>
-          <p class="hint">Move with Arrow Keys or WASD.</p>
+          <p class="hint">Arrow keys / WASD, or the pad below on touch screens.</p>
+        </div>
+
+        <div id="dpad" aria-hidden="true">
+          <button class="dpad-btn dpad-up" data-dx="0" data-dy="-1" aria-label="Move up">▲</button>
+          <button class="dpad-btn dpad-left" data-dx="-1" data-dy="0" aria-label="Move left">◀</button>
+          <button class="dpad-btn dpad-right" data-dx="1" data-dy="0" aria-label="Move right">▶</button>
+          <button class="dpad-btn dpad-down" data-dx="0" data-dy="1" aria-label="Move down">▼</button>
         </div>
 
         <ul id="player-list"></ul>
