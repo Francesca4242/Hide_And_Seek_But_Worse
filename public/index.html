@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hide and Seek But Worse</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Hide and Seek But Worse</h1>
+      <p class="tagline">A tiny real-time multiplayer game on Cloudflare Workers + Durable Objects.</p>
+    </header>
+
+    <main>
+      <section id="join-screen" class="panel">
+        <label>
+          Name
+          <input id="name-input" maxlength="16" placeholder="Your name" autocomplete="off" />
+        </label>
+        <label>
+          Room code
+          <input id="room-input" maxlength="32" placeholder="default" autocomplete="off" />
+        </label>
+        <button id="join-btn">Join Game</button>
+        <p class="hint">Share the same room code with friends to play together.</p>
+      </section>
+
+      <section id="game-screen" class="panel hidden">
+        <div id="hud">
+          <span id="hud-role">Role: —</span>
+          <span id="hud-phase">Phase: —</span>
+          <span id="hud-timer">Time: —</span>
+          <span id="hud-found">Found: 0/0</span>
+        </div>
+
+        <canvas id="board" width="512" height="384"></canvas>
+
+        <div id="controls">
+          <button id="start-btn" class="hidden">Start Game</button>
+          <button id="restart-btn" class="hidden">Play Again</button>
+          <p class="hint">Move with Arrow Keys or WASD.</p>
+        </div>
+
+        <ul id="player-list"></ul>
+      </section>
+    </main>
+
+    <script src="/game.js"></script>
+  </body>
+</html>
