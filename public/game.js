@@ -5,6 +5,7 @@
   const gameScreen = $('game-screen');
   const nameInput = $('name-input');
   const roomInput = $('room-input');
+  const iconPicker = $('icon-picker');
   const joinBtn = $('join-btn');
   const notifBtn = $('notif-btn');
   const toastContainer = $('toast-container');
@@ -86,6 +87,11 @@
   const MOVE_COOLDOWN_MS = 110;
   const DPAD_REPEAT_MS = 130;
 
+  const ICONS = [
+    '🕵️', '🧥', '🗄️', '📎', '🪴', '📦', '🧦', '🎩',
+    '🦊', '🐱', '🐭', '🐢', '🦉', '🐧', '🦝', '🐇', '👻', '🐸',
+  ];
+
   let ws = null;
   let myId = null;
   let grid = null;
@@ -93,6 +99,7 @@
   let lastMoveAt = 0;
   let previousPhase = null;
   let selectedMode = 'virtual';
+  let selectedIcon = null;
 
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({
@@ -157,9 +164,9 @@
 
   // --- Connection ----------------------------------------------------------
 
-  function connect(name, room) {
+  function connect(name, room, icon) {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&name=${encodeURIComponent(name)}`;
+    const url = `${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&name=${encodeURIComponent(name)}&icon=${encodeURIComponent(icon)}`;
     ws = new WebSocket(url);
 
     ws.addEventListener('open', () => {
@@ -191,10 +198,45 @@
     });
   }
 
+  // --- Icon picker -----------------------------------------------------------
+
+  function setSelectedIcon(icon) {
+    selectedIcon = icon;
+    iconPicker.querySelectorAll('.icon-btn').forEach((btn) => {
+      btn.classList.toggle('selected', btn.textContent === icon);
+    });
+    try {
+      localStorage.setItem('hsw-icon', icon);
+    } catch {
+      // Storage unavailable (private browsing, etc.); not essential.
+    }
+  }
+
+  (function initIconPicker() {
+    ICONS.forEach((icon) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'icon-btn';
+      btn.textContent = icon;
+      btn.addEventListener('click', () => setSelectedIcon(icon));
+      iconPicker.appendChild(btn);
+    });
+    let initial = null;
+    try {
+      initial = localStorage.getItem('hsw-icon');
+    } catch {
+      // ignore
+    }
+    if (!initial || !ICONS.includes(initial)) {
+      initial = ICONS[Math.floor(Math.random() * ICONS.length)];
+    }
+    setSelectedIcon(initial);
+  })();
+
   joinBtn.addEventListener('click', () => {
     const name = nameInput.value.trim() || `Player${Math.floor(Math.random() * 1000)}`;
     const room = roomInput.value.trim() || 'default';
-    connect(name, room);
+    connect(name, room, selectedIcon);
   });
 
   function send(payload) {
@@ -474,7 +516,7 @@
           const li = document.createElement('li');
           li.className = p.found ? 'is-found' : '';
           const nameSpan = document.createElement('span');
-          nameSpan.textContent = `${p.name} ${p.found ? '(found)' : ''}`;
+          nameSpan.textContent = `${p.icon || ''} ${p.name} ${p.found ? '(found)' : ''}`;
           li.appendChild(nameSpan);
           if (!p.found) {
             const btn = document.createElement('button');
@@ -503,7 +545,7 @@
     if (!show) return;
     foiList.innerHTML = s.foi.map((f) => `
       <div class="foi-entry">
-        <span class="foi-name ${f.found ? 'is-found' : ''}">${esc(f.name)}${f.found ? ' — LOCATED' : ''}</span>
+        <span class="foi-name ${f.found ? 'is-found' : ''}">${esc(f.icon || '')} ${esc(f.name)}${f.found ? ' — LOCATED' : ''}</span>
         <p>Declared location: &ldquo;${esc(f.location)}&rdquo;<br />
         Estimated discovery: ${esc(f.eta)} min (non-binding) &middot;
         Risk assessment: ${f.risk ? 'Completed' : 'Not on file'} &middot;
@@ -584,7 +626,7 @@
       dot.style.background = p.color;
       li.appendChild(dot);
       const label = p.role === 'seeker' ? 'seeker' : p.found ? 'found' : 'hider';
-      li.appendChild(document.createTextNode(`${p.name} (${label})`));
+      li.appendChild(document.createTextNode(`${p.icon || ''} ${p.name} (${label})`));
       playerList.appendChild(li);
     }
   }
@@ -712,6 +754,15 @@
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.setLineDash([]);
+
+      if (p.icon) {
+        ctx.font = `${Math.round(CELL * 0.55)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.globalAlpha = p.found ? 0.6 : 1;
+        ctx.fillText(p.icon, cx, cy + 1);
+        ctx.globalAlpha = 1;
+      }
 
       if (p.id === myId) {
         ctx.beginPath();

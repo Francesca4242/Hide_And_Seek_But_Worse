@@ -34,6 +34,14 @@ for (const [x0, y0, x1, y1] of WALL_BLOCKS) {
 
 const COLORS = ['#e6533c', '#3ca7e6', '#3ce695', '#e6c93c', '#c33ce6', '#e68a3c', '#3ce6df', '#e63c8a'];
 
+// Must match the ICONS list in public/game.js — kept in sync by hand since
+// this is the server-side whitelist (anything else falls back to DEFAULT_ICON).
+const ICONS = [
+  '🕵️', '🧥', '🗄️', '📎', '🪴', '📦', '🧦', '🎩',
+  '🦊', '🐱', '🐭', '🐢', '🦉', '🐧', '🦝', '🐇', '👻', '🐸',
+];
+const DEFAULT_ICON = ICONS[0];
+
 // --- Timing --------------------------------------------------------------
 const BRIEFING_SECONDS = 25;
 const HIDING_SECONDS: Record<Mode, number> = { virtual: 18, physical: 45 };
@@ -102,6 +110,7 @@ type Phase = 'lobby' | 'briefing' | 'hiding' | 'seeking' | 'ended';
 interface Player {
   id: string;
   name: string;
+  icon: string;
   x: number;
   y: number;
   color: string;
@@ -195,24 +204,26 @@ export class GameRoom {
     }
 
     const name = (url.searchParams.get('name') || 'Player').slice(0, 16) || 'Player';
+    const rawIcon = url.searchParams.get('icon') || '';
+    const icon = ICONS.includes(rawIcon) ? rawIcon : DEFAULT_ICON;
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     server.accept();
-    this.addPlayer(server, name);
+    this.addPlayer(server, name, icon);
 
     return new Response(null, { status: 101, webSocket: client });
   }
 
   // --- Session management ----------------------------------------------
 
-  private addPlayer(ws: WebSocket, name: string) {
+  private addPlayer(ws: WebSocket, name: string, icon: string) {
     const id = crypto.randomUUID();
     const spawn = this.findSpawn();
     const role: Player['role'] = this.players.size === 0 ? 'seeker' : 'hider';
     const color = COLORS[this.players.size % COLORS.length];
 
     const player: Player = {
-      id, name, x: spawn.x, y: spawn.y, color, role, found: false, foundAt: null, ready: false, ws,
+      id, name, icon, x: spawn.x, y: spawn.y, color, role, found: false, foundAt: null, ready: false, ws,
       hidingCard: null, hasAccused: false, immuneUntil: 0, pingedUntil: 0,
     };
     this.players.set(id, player);
@@ -912,6 +923,7 @@ export class GameRoom {
         return {
           id: p.id,
           name: reveal ? p.name : this.redactName(p.name),
+          icon: reveal ? p.icon : '❓',
           found: p.found,
           location: form ? form.location : 'Unspecified',
           eta: form ? form.eta : 0,
@@ -945,7 +957,7 @@ export class GameRoom {
     const hiders = [...this.players.values()].filter((p) => p.role === 'hider');
     const players = [...this.players.values()]
       .filter((p) => this.isVisibleTo(viewer, p))
-      .map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, color: p.color, role: p.role, found: p.found, ready: p.ready }));
+      .map((p) => ({ id: p.id, name: p.name, icon: p.icon, x: p.x, y: p.y, color: p.color, role: p.role, found: p.found, ready: p.ready }));
 
     const isSeeker = viewer.id === this.seekerId;
     const isHider = viewer.role === 'hider';

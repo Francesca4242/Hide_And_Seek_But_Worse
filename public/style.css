@@ -259,6 +259,27 @@ button:disabled {
   background: rgba(230, 83, 60, 0.18);
 }
 
+#icon-picker {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.icon-btn {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 8px 0;
+}
+
+.icon-btn.selected {
+  border-color: var(--accent);
+  background: rgba(230, 83, 60, 0.18);
+}
+
 #ready-btn {
   width: 100%;
   margin-bottom: 4px;
