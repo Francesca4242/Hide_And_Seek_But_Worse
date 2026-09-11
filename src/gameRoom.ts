@@ -106,6 +106,8 @@ const CHAOS_CARDS: Card[] = [
   { id: 'floodlight', text: `FLOODLIGHT: emergency lighting has been triggered. All hiders are illuminated to the seeker for ${FLOODLIGHT_MS / 1000} seconds.`, effect: 'floodlight' },
   { id: 'freeze', text: `FREEZE! By order of the Department, nobody may move a muscle for ${FREEZE_MS / 1000} seconds. This is not a drill. Actually, it might be.`, effect: 'freeze' },
   { id: 'third_person', text: 'By order of the Department, all players must now refer to themselves in the third person for the remainder of the round.', effect: null },
+  { id: 'performance_review', text: `PERFORMANCE REVIEW: one hider has been selected at random for an unscheduled spot-check and is illuminated for ${FLOODLIGHT_MS / 1000} seconds. Nothing personal. Everything is personal.`, effect: 'performance_review' },
+  { id: 'fire_drill', text: 'FIRE DRILL: by order of the Department, everyone must evacuate to a new position immediately. This is, in fact, a drill.', effect: 'fire_drill' },
 ];
 
 const APPEAL_REASONS = [
@@ -186,6 +188,8 @@ interface Player {
   score: number;
   alibiChits: number;
   pendingAudit: PendingAudit | null;
+  auditsPassed: number;
+  chitsUsedThisRound: number;
 }
 
 interface HidingForm {
@@ -208,10 +212,18 @@ interface PendingVote {
   votes: Map<string, string>; // voterId -> candidateId
 }
 
+interface Superlative {
+  title: string;
+  icon: string;
+  name: string;
+  blurb: string;
+}
+
 interface RoundResult {
   reason: 'all_found' | 'time_up';
   found: number;
   total: number;
+  superlatives: Superlative[];
 }
 
 type TimerKind =
@@ -294,6 +306,7 @@ export class GameRoom {
       id, name, icon, x: spawn.x, y: spawn.y, color, role, found: false, foundAt: null, ready: false, ws,
       hidingCard: null, hasAccused: false, immuneUntil: 0, pingedUntil: 0,
       moveSkip: false, score: 0, alibiChits: 0, pendingAudit: null,
+      auditsPassed: 0, chitsUsedThisRound: 0,
     };
     this.players.set(id, player);
     this.joinOrder.push(id);
@@ -415,6 +428,8 @@ export class GameRoom {
       p.moveSkip = false;
       p.alibiChits = 0;
       p.pendingAudit = null;
+      p.auditsPassed = 0;
+      p.chitsUsedThisRound = 0;
       // p.score intentionally NOT reset — it's a running total for the session.
     }
   }
@@ -543,7 +558,7 @@ export class GameRoom {
 
   private endRound(reason: RoundResult['reason'], found: number, total: number) {
     this.phase = 'ended';
-    this.lastResult = { reason, found, total };
+    this.lastResult = { reason, found, total, superlatives: this.buildSuperlatives() };
     this.dispute = null;
     this.pendingVote = null;
     this.timers = [];
@@ -692,6 +707,7 @@ export class GameRoom {
       }
       this.clearTimers('dispute_timeout');
       player.alibiChits -= 1;
+      player.chitsUsedThisRound += 1;
       player.immuneUntil = Date.now() + IMMUNITY_MS;
       this.broadcastNotice(`${player.name} presents a Pre-Approved Alibi Chit. The finding is withdrawn, no questions asked.`);
       this.dispute = null;
@@ -845,6 +861,32 @@ export class GameRoom {
         break;
       case 'freeze':
         this.moveFreezeUntil = Date.now() + FREEZE_MS;
+        break;
+      case 'performance_review': {
+        const unfound = [...this.players.values()].filter((p) => p.role === 'hider' && !p.found);
+        if (unfound.length > 0) {
+          const target = unfound[Math.floor(Math.random() * unfound.length)];
+          target.pingedUntil = Date.now() + FLOODLIGHT_MS;
+        }
+        break;
+      }
+      case 'fire_drill':
+        if (this.mode === 'virtual') {
+          const seeker = this.seekerId ? this.players.get(this.seekerId) : null;
+          if (seeker) {
+            const spawn = this.findSpawn();
+            seeker.x = spawn.x;
+            seeker.y = spawn.y;
+          }
+          for (const p of this.players.values()) {
+            if (p.role !== 'hider' || p.found) continue;
+            const spawn = p.hidingCard?.effect === 'stay_near_seeker' && seeker
+              ? this.findSpawnNear(seeker.x, seeker.y, NEAR_SEEKER_RADIUS)
+              : this.findSpawn();
+            p.x = spawn.x;
+            p.y = spawn.y;
+          }
+        }
         break;
       case 'seeker_becomes_hider':
         this.reassignSeekerRandomly();
@@ -1079,6 +1121,7 @@ export class GameRoom {
     if (choice === correct) {
       player.score += AUDIT_PASS_POINTS;
       player.alibiChits += 1;
+      player.auditsPassed += 1;
       this.notice(player, `Audit passed: you correctly recalled your declared ${field === 'location' ? 'location' : 'ETA'}. +${AUDIT_PASS_POINTS} Compliance Points, +1 Alibi Chit.`);
     } else {
       player.pingedUntil = Date.now() + AUDIT_REVEAL_MS;
@@ -1144,6 +1187,59 @@ export class GameRoom {
     const endAt = p.found && p.foundAt ? p.foundAt : Date.now();
     const elapsed = endAt - this.seekStartedAt;
     return Math.max(0, Math.min(100, Math.round((elapsed / totalMs) * 100)));
+  }
+
+  // Departmental Honors: a lighthearted end-of-round awards ceremony
+  // computed from this round's stats before they're wiped for the next one.
+  private buildSuperlatives(): Superlative[] {
+    const all = [...this.players.values()];
+    if (all.length === 0) return [];
+    const awards: Superlative[] = [];
+
+    const topScore = all.reduce((a, b) => (b.score > a.score ? b : a), all[0]);
+    awards.push({
+      title: 'Employee of the Month', icon: '🏆', name: topScore.name,
+      blurb: `${topScore.score} Compliance Points on file. A model civil servant.`,
+    });
+
+    const hiders = all.filter((p) => p.role === 'hider');
+    if (hiders.length > 0) {
+      const wallflower = hiders.reduce(
+        (a, b) => (this.concealmentRating(b) > this.concealmentRating(a) ? b : a),
+        hiders[0]
+      );
+      awards.push({
+        title: 'The Wallflower Award', icon: '🪴', name: wallflower.name,
+        blurb: `${this.concealmentRating(wallflower)}% concealment rating. Truly one with the furniture.`,
+      });
+
+      const found = hiders.filter((p) => p.found && p.foundAt !== null);
+      if (found.length > 0) {
+        const first = found.reduce((a, b) => (b.foundAt! < a.foundAt! ? b : a));
+        awards.push({
+          title: 'Repeat Offender', icon: '🚨', name: first.name,
+          blurb: "First to be formally discovered. Some people just can't stay off the Department's radar.",
+        });
+      }
+
+      const chitUser = hiders.reduce((a, b) => (b.chitsUsedThisRound > a.chitsUsedThisRound ? b : a), hiders[0]);
+      if (chitUser.chitsUsedThisRound > 0) {
+        awards.push({
+          title: 'Paper Trail Champion', icon: '📎', name: chitUser.name,
+          blurb: `Talked their way out of ${chitUser.chitsUsedThisRound} finding${chitUser.chitsUsedThisRound === 1 ? '' : 's'} using Pre-Approved Alibi Chits.`,
+        });
+      }
+
+      const auditStar = hiders.reduce((a, b) => (b.auditsPassed > a.auditsPassed ? b : a), hiders[0]);
+      if (auditStar.auditsPassed > 0) {
+        awards.push({
+          title: 'Model Employee', icon: '📋', name: auditStar.name,
+          blurb: `Passed ${auditStar.auditsPassed} Compliance Audit${auditStar.auditsPassed === 1 ? '' : 's'} without breaking a sweat.`,
+        });
+      }
+    }
+
+    return awards;
   }
 
   private buildFoi(revealAll: boolean) {

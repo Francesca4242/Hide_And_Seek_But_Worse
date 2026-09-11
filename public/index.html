@@ -14,6 +14,7 @@
   </head>
   <body>
     <div id="toast-container"></div>
+    <div id="confetti-container" aria-hidden="true"></div>
 
     <header>
       <h1>Hide and Seek But Worse</h1>
@@ -81,6 +82,7 @@
           <p class="hint" id="ready-progress"></p>
           <button id="start-btn" class="hidden">Start Game</button>
           <p class="hint">Everyone must declare themselves Ready before the Department will begin.</p>
+          <p class="hint" id="lobby-notice"></p>
         </div>
 
         <!-- BRIEFING (Form 27B) -->
@@ -123,6 +125,12 @@
 
         <!-- Round result -->
         <div id="result-banner" class="hidden"></div>
+
+        <!-- Departmental Honors: end-of-round awards ceremony -->
+        <div id="superlatives-panel" class="hidden">
+          <p class="section-title">Departmental Honors</p>
+          <div id="superlatives-list"></div>
+        </div>
 
         <!-- Formal accusation (required by the "accuse first" seeking card, any mode) -->
         <div id="accuse-box" class="hidden">

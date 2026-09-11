@@ -9,6 +9,7 @@
   const joinBtn = $('join-btn');
   const notifBtn = $('notif-btn');
   const toastContainer = $('toast-container');
+  const confettiContainer = $('confetti-container');
 
   const hudRole = $('hud-role');
   const hudPhase = $('hud-phase');
@@ -22,6 +23,7 @@
   const readyBtn = $('ready-btn');
   const readyProgress = $('ready-progress');
   const startBtn = $('start-btn');
+  const lobbyNotice = $('lobby-notice');
   const restartBtn = $('restart-btn');
   const controlsHint = $('controls-hint');
   const goOverlay = $('go-overlay');
@@ -45,6 +47,8 @@
   const chaosBanner = $('chaos-banner');
   const chaosText = chaosBanner.querySelector('.chaos-text');
   const resultBanner = $('result-banner');
+  const superlativesPanel = $('superlatives-panel');
+  const superlativesList = $('superlatives-list');
 
   const canvas = $('board');
   const ctx = canvas.getContext('2d');
@@ -100,6 +104,19 @@
     '🦊', '🐱', '🐭', '🐢', '🦉', '🐧', '🦝', '🐇', '👻', '🐸',
   ];
 
+  const LOBBY_QUIPS = [
+    'Reminder: hiding is a privilege, not a right.',
+    'Please remain seated until the bureaucracy has come to a complete stop.',
+    'In the event of an actual emergency, please file Form 6A first.',
+    'Concealment tip: confidence. Also curtains.',
+    'The Department is not liable for hiding spots that turn out to be load-bearing.',
+    'Fun fact: nobody has ever read the bylaws. Not even us.',
+    'A seeker in the hand is worth two in the filing cabinet.',
+    "Remember: it's not procrastination, it's an Estimated Time of Discovery.",
+    'All complaints should be filed in writing, then quietly forgotten.',
+    'This game is 40% hiding, 60% paperwork, and 100% the Department’s fault.',
+  ];
+
   let ws = null;
   let myId = null;
   let grid = null;
@@ -142,6 +159,24 @@
     el.textContent = text;
     toastContainer.appendChild(el);
     setTimeout(() => el.remove(), 5000);
+  }
+
+  // --- Confetti burst (fired once when a round ends with all hiders found) --
+
+  const CONFETTI_COLORS = ['#e6533c', '#3ca7e6', '#3ce695', '#e6c93c', '#c33ce6', '#e68a3c'];
+
+  function burstConfetti() {
+    for (let i = 0; i < 40; i++) {
+      const el = document.createElement('div');
+      el.className = 'confetti-piece';
+      el.style.left = `${Math.random() * 100}vw`;
+      el.style.background = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+      el.style.animationDuration = `${1.6 + Math.random() * 1.2}s`;
+      el.style.animationDelay = `${Math.random() * 0.4}s`;
+      el.style.setProperty('--rot', `${Math.random() * 360}deg`);
+      confettiContainer.appendChild(el);
+      setTimeout(() => el.remove(), 3200);
+    }
   }
 
   function alertEvent(text) {
@@ -279,6 +314,14 @@
   startBtn.addEventListener('click', () => send({ type: 'start' }));
   restartBtn.addEventListener('click', () => send({ type: 'restart' }));
 
+  let quipIndex = Math.floor(Math.random() * LOBBY_QUIPS.length);
+  lobbyNotice.textContent = LOBBY_QUIPS[quipIndex];
+  setInterval(() => {
+    if (lobbyPanel.classList.contains('hidden')) return;
+    quipIndex = (quipIndex + 1) % LOBBY_QUIPS.length;
+    lobbyNotice.textContent = LOBBY_QUIPS[quipIndex];
+  }, 4000);
+
   function playGoSequence() {
     const steps = ['Ready…', 'Set…', 'Hide!'];
     let i = 0;
@@ -401,6 +444,8 @@
         formVent.checked = false;
         formStatus.textContent = '';
         appealCustom.value = '';
+      } else if (s.phase === 'ended' && s.lastResult?.reason === 'all_found') {
+        burstConfetti();
       }
       previousPhase = s.phase;
     }
@@ -501,11 +546,24 @@
   function renderResultBanner(s) {
     const show = s.phase === 'ended' && s.lastResult;
     resultBanner.classList.toggle('hidden', !show);
+    const hasAwards = show && s.lastResult.superlatives && s.lastResult.superlatives.length > 0;
+    superlativesPanel.classList.toggle('hidden', !hasAwards);
     if (!show) return;
     const r = s.lastResult;
     resultBanner.textContent = r.reason === 'all_found'
       ? `Round concluded: all hiders located (${r.found}/${r.total}).`
       : `Round concluded: time expired (${r.found}/${r.total} located).`;
+    if (hasAwards) {
+      superlativesList.innerHTML = r.superlatives.map((a) => `
+        <div class="superlative">
+          <span class="superlative-icon">${esc(a.icon)}</span>
+          <div>
+            <p class="superlative-title">${esc(a.title)}: ${esc(a.name)}</p>
+            <p class="superlative-blurb">${esc(a.blurb)}</p>
+          </div>
+        </div>
+      `).join('');
+    }
   }
 
   function renderBoardAndPhysical(s, me) {

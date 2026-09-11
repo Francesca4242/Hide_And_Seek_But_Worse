@@ -367,6 +367,78 @@ button:disabled {
   text-align: center;
 }
 
+/* Departmental Honors: end-of-round awards ceremony */
+#superlatives-panel {
+  margin-bottom: 16px;
+  background: var(--panel-2);
+  border: 1px dashed var(--khaki);
+  border-radius: 4px;
+  padding: 14px;
+  animation: stamp-in 0.35s ease-out;
+}
+
+.superlative {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px dotted var(--border);
+}
+
+.superlative:last-child {
+  border-bottom: none;
+}
+
+.superlative-icon {
+  font-size: 1.4rem;
+  line-height: 1.2;
+}
+
+.superlative-title {
+  margin: 0;
+  font-weight: 700;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+}
+
+.superlative-blurb {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+@keyframes stamp-in {
+  0% { transform: scale(1.4) rotate(-8deg); opacity: 0; }
+  70% { transform: scale(0.96) rotate(1deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+/* Confetti burst on a fully successful (all_found) round */
+#confetti-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 70;
+  overflow: hidden;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 14px;
+  opacity: 0.9;
+  animation-name: confetti-fall;
+  animation-timing-function: ease-in;
+  animation-fill-mode: forwards;
+}
+
+@keyframes confetti-fall {
+  0% { transform: translateY(-10vh) rotate(var(--rot, 0deg)); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(calc(var(--rot, 0deg) + 360deg)); opacity: 0; }
+}
+
 canvas {
   display: block;
   width: 100%;
