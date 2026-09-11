@@ -73,8 +73,10 @@
 
   const disputeModal = $('dispute-modal');
   const disputeAccused = $('dispute-accused');
+  const disputeAccusedText = $('dispute-accused-text');
   const disputeAlibiBtn = $('dispute-alibi-btn');
   const disputeAcceptBtn = $('dispute-accept-btn');
+  const appealHint = $('appeal-hint');
   const appealReasons = $('appeal-reasons');
   const appealCustom = $('appeal-custom');
   const appealSubmitBtn = $('appeal-submit-btn');
@@ -663,14 +665,33 @@
     disputeJuror.classList.toggle('hidden', d.role !== 'juror');
 
     if (d.role === 'accused') {
+      const isAwaiting = d.stage === 'awaiting_response';
+      const isTribunal = d.stage === 'tribunal';
+      const isLastChance = d.stage === 'last_chance';
+
       disputeAlibiBtn.classList.toggle('hidden', !(d.alibiChits >= 1));
       disputeAlibiBtn.textContent = `Present Alibi Chit (${d.alibiChits})`;
-      appealReasons.innerHTML = '';
-      for (const reason of d.reasons) {
-        const btn = document.createElement('button');
-        btn.textContent = reason;
-        btn.addEventListener('click', () => send({ type: 'disputeResponse', action: 'appeal', reason }));
-        appealReasons.appendChild(btn);
+      disputeAcceptBtn.classList.toggle('hidden', isTribunal);
+      disputeAcceptBtn.textContent = isLastChance ? 'Accept Fate (Final)' : 'Accept Fate';
+      appealHint.classList.toggle('hidden', !isAwaiting);
+      appealReasons.classList.toggle('hidden', !isAwaiting);
+      appealCustom.classList.toggle('hidden', !isAwaiting);
+      appealSubmitBtn.classList.toggle('hidden', !isAwaiting);
+
+      disputeAccusedText.textContent = isTribunal
+        ? 'Your appeal has been filed. The tribunal is now voting — you may still play an Alibi Chit to end this early.'
+        : isLastChance
+          ? 'Your appeal was rejected. This is your last chance: play an Alibi Chit to survive anyway, or accept your fate.'
+          : 'You have been sighted and formally discovered. How do you respond?';
+
+      if (isAwaiting) {
+        appealReasons.innerHTML = '';
+        for (const reason of d.reasons) {
+          const btn = document.createElement('button');
+          btn.textContent = reason;
+          btn.addEventListener('click', () => send({ type: 'disputeResponse', action: 'appeal', reason }));
+          appealReasons.appendChild(btn);
+        }
       }
     } else if (d.role === 'seeker') {
       disputeSeekerText.textContent = d.stage === 'tribunal'
@@ -713,7 +734,7 @@
       dot.className = 'swatch';
       dot.style.background = p.color;
       li.appendChild(dot);
-      const label = p.role === 'seeker' ? 'seeker' : p.found ? 'found' : 'hider';
+      const label = p.role === 'seeker' ? 'seeker' : p.found ? 'informant' : 'hider';
       li.appendChild(document.createTextNode(`${p.icon || ''} ${p.name} (${label}, ${p.score} pts)`));
       playerList.appendChild(li);
     }

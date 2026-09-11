@@ -66,6 +66,8 @@ const AUDIT_INTERVAL_MS = 25_000;
 const AUDIT_CHANCE = 0.5;
 const AUDIT_RESPONSE_MS = 10_000;
 const AUDIT_REVEAL_MS = 4_000;
+const LAST_CHANCE_SECONDS = 10;
+const INFORMANT_BONUS_POINTS = 20;
 
 // --- Card decks ------------------------------------------------------------
 // "effect" is a machine-checked tag; null means the card is honour-system
@@ -201,8 +203,10 @@ interface HidingForm {
 
 interface Dispute {
   accusedId: string;
+  // Whoever raised this finding — usually the seeker, but a Departmental
+  // Informant (a previously-caught hider) can raise one too.
   seekerId: string;
-  stage: 'awaiting_response' | 'tribunal';
+  stage: 'awaiting_response' | 'tribunal' | 'last_chance';
   reason: string | null;
   votes: Map<string, 'uphold' | 'reject'>;
   availableReasons: string[];
@@ -234,6 +238,7 @@ type TimerKind =
   | 'ping'
   | 'dispute_timeout'
   | 'tribunal_timeout'
+  | 'last_chance_timeout'
   | 'vote_timeout'
   | 'audit_check'
   | 'audit_timeout';
@@ -329,6 +334,7 @@ export class GameRoom {
     if (this.dispute && (this.dispute.accusedId === id || this.dispute.seekerId === id)) {
       this.clearTimers('dispute_timeout');
       this.clearTimers('tribunal_timeout');
+      this.clearTimers('last_chance_timeout');
       this.dispute = null;
       this.resumeClockIfPaused();
     }
@@ -594,11 +600,13 @@ export class GameRoom {
   private handleMove(player: Player, rawDx: number, rawDy: number) {
     if (this.mode !== 'virtual') return;
     if (this.phase !== 'hiding' && this.phase !== 'seeking') return;
-    if (player.found) return;
+    if (this.phase === 'hiding' && player.found) return;
     if (this.dispute && (this.dispute.accusedId === player.id || this.dispute.seekerId === player.id)) return;
     if (player.role === 'seeker' && this.phase === 'hiding') return; // frozen while hiders scatter
     if (Date.now() < this.moveFreezeUntil) return; // CHAOS CARD: freeze
-    if (this.phase === 'seeking' && player.role === 'hider' && player.hidingCard?.effect === 'camouflage') return;
+    // Once found, a hider's hiding obligations lapse — they're a Departmental
+    // Informant now, not hiding, so camouflage/stay-near-seeker no longer apply.
+    if (this.phase === 'seeking' && player.role === 'hider' && !player.found && player.hidingCard?.effect === 'camouflage') return;
 
     if (player.role === 'seeker' && this.seekingCard?.effect === 'half_speed') {
       player.moveSkip = !player.moveSkip;
@@ -616,7 +624,7 @@ export class GameRoom {
     const ny = clamp(player.y + dy, 0, GRID_H - 1);
     if (WALLS.has(`${nx},${ny}`)) return;
 
-    if (player.role === 'hider' && player.hidingCard?.effect === 'stay_near_seeker') {
+    if (player.role === 'hider' && !player.found && player.hidingCard?.effect === 'stay_near_seeker') {
       const seeker = this.seekerId ? this.players.get(this.seekerId) : null;
       if (seeker && Math.max(Math.abs(nx - seeker.x), Math.abs(ny - seeker.y)) > NEAR_SEEKER_RADIUS) return;
     }
@@ -624,7 +632,10 @@ export class GameRoom {
     player.x = nx;
     player.y = ny;
 
-    if (this.phase === 'seeking' && player.role === 'seeker') this.tryCatch(player);
+    if (this.phase === 'seeking') {
+      if (player.role === 'seeker') this.tryCatch(player);
+      else if (player.role === 'hider' && player.found) this.tryInformOn(player);
+    }
     this.broadcastState();
   }
 
@@ -633,6 +644,20 @@ export class GameRoom {
     for (const p of this.players.values()) {
       if (p.role === 'hider' && !p.found && p.x === seeker.x && p.y === seeker.y) {
         this.tryOpenDisputeAgainst(seeker.id, p.id);
+        return;
+      }
+    }
+  }
+
+  // A caught hider becomes a Departmental Informant: still free to roam, and
+  // if they cross paths with a still-hiding colleague, they can tip them off.
+  private tryInformOn(informant: Player) {
+    if (this.dispute) return;
+    for (const p of this.players.values()) {
+      if (p.role === 'hider' && !p.found && p.x === informant.x && p.y === informant.y) {
+        if (this.tryOpenDisputeAgainst(informant.id, p.id)) {
+          this.notice(informant, `Tip filed against ${p.name}. The Department thanks you for your civic duty.`);
+        }
         return;
       }
     }
@@ -663,58 +688,83 @@ export class GameRoom {
 
   // --- Formal discovery / appeals / tribunal ------------------------------
 
-  private tryOpenDisputeAgainst(seekerId: string, targetId: string): boolean {
+  private tryOpenDisputeAgainst(accuserId: string, targetId: string): boolean {
     if (this.dispute) return false;
-    const seeker = this.players.get(seekerId);
+    const accuser = this.players.get(accuserId);
     const target = this.players.get(targetId);
-    if (!seeker || !target || target.role !== 'hider' || target.found) return false;
+    if (!accuser || !target || target.role !== 'hider' || target.found) return false;
     if (Date.now() < target.immuneUntil) {
-      this.notice(seeker, `${target.name} currently holds statutory immunity from a recent dismissal. Try again once it lapses.`);
+      this.notice(accuser, `${target.name} currently holds statutory immunity from a recent dismissal. Try again once it lapses.`);
       return false;
     }
-    if (this.seekingCard?.effect === 'accuse_first' && !seeker.hasAccused) {
-      this.notice(seeker, 'You must formally accuse an innocent object before making an arrest.');
+    // The "accuse an innocent object first" obligation belongs to the actual
+    // seeker's card — it doesn't bind an Informant filing a tip.
+    if (accuserId === this.seekerId && this.seekingCard?.effect === 'accuse_first' && !accuser.hasAccused) {
+      this.notice(accuser, 'You must formally accuse an innocent object before making an arrest.');
       return false;
     }
-    this.openDispute(targetId);
+    this.openDispute(targetId, accuserId);
     return true;
   }
 
-  private openDispute(accusedId: string) {
-    if (this.dispute || !this.seekerId) return;
+  private openDispute(accusedId: string, accuserId: string) {
+    if (this.dispute) return;
     this.dispute = {
-      accusedId, seekerId: this.seekerId, stage: 'awaiting_response', reason: null,
+      accusedId, seekerId: accuserId, stage: 'awaiting_response', reason: null,
       votes: new Map(), availableReasons: pickRandomSubset(APPEAL_REASONS, 4),
     };
     this.seekPausedAt = Date.now();
     this.scheduleTimer(DISPUTE_RESPONSE_SECONDS * 1000, 'dispute_timeout');
 
     const accused = this.players.get(accusedId);
-    const seeker = this.players.get(this.seekerId);
+    const accuser = this.players.get(accuserId);
     if (accused) this.notice(accused, 'You have been formally discovered. Respond within the statutory period, or forever hold your peace.');
-    if (seeker && accused) this.notice(seeker, `Your finding of ${accused.name} is now on file, pending response.`);
+    if (accuser && accused) this.notice(accuser, `Your finding of ${accused.name} is now on file, pending response.`);
     this.broadcastState();
   }
 
   private handleDisputeResponse(player: Player, action: 'accept' | 'appeal' | 'alibi', reason?: string) {
     if (!this.dispute || this.dispute.accusedId !== player.id) return;
-    if (this.dispute.stage !== 'awaiting_response') return;
+    const stage = this.dispute.stage;
 
+    // An Alibi Chit is a safety net that works at any stage of a dispute:
+    // upfront, mid-tribunal-vote (which cancels the vote outright), or as a
+    // last resort after a rejected appeal. More chances to stay in the game.
     if (action === 'alibi') {
       if (player.alibiChits < 1) {
         this.notice(player, 'You have no Alibi Chits on file.');
         return;
       }
-      this.clearTimers('dispute_timeout');
+      if (stage === 'awaiting_response') this.clearTimers('dispute_timeout');
+      else if (stage === 'tribunal') this.clearTimers('tribunal_timeout');
+      else this.clearTimers('last_chance_timeout');
+
       player.alibiChits -= 1;
       player.chitsUsedThisRound += 1;
       player.immuneUntil = Date.now() + IMMUNITY_MS;
-      this.broadcastNotice(`${player.name} presents a Pre-Approved Alibi Chit. The finding is withdrawn, no questions asked.`);
+      this.broadcastNotice(
+        stage === 'tribunal'
+          ? `${player.name} produces a Pre-Approved Alibi Chit mid-hearing. The tribunal is dismissed before it can even vote.`
+          : stage === 'last_chance'
+            ? `${player.name} plays a Pre-Approved Alibi Chit at the eleventh hour. The rejected appeal is overruled on a technicality.`
+            : `${player.name} presents a Pre-Approved Alibi Chit. The finding is withdrawn, no questions asked.`
+      );
       this.dispute = null;
       this.resumeClockIfPaused();
       this.broadcastState();
       return;
     }
+
+    if (stage === 'last_chance') {
+      // The appeal is spent; only 'accept' (or the alibi handled above) remains.
+      if (action !== 'accept') return;
+      this.clearTimers('last_chance_timeout');
+      this.broadcastNotice(`${player.name} has no further recourse. The rejected appeal stands.`);
+      this.finalizeDispute(true);
+      return;
+    }
+
+    if (stage !== 'awaiting_response') return; // mid-tribunal: nothing else to do but wait (or play a chit, above)
 
     this.clearTimers('dispute_timeout');
 
@@ -786,21 +836,58 @@ export class GameRoom {
       this.dispute = null;
       this.resumeClockIfPaused();
       this.broadcastState();
+      return;
+    }
+
+    this.broadcastNotice(`Appeal rejected (${reject}-${uphold}): ${pickOne(APPEAL_REJECTED_LINES)}`);
+    const accused = this.players.get(this.dispute.accusedId);
+    if (accused && accused.alibiChits >= 1) {
+      // One last chance: a rejected appeal doesn't have to be the end if
+      // they're still holding a Pre-Approved Alibi Chit.
+      this.dispute.stage = 'last_chance';
+      this.scheduleTimer(LAST_CHANCE_SECONDS * 1000, 'last_chance_timeout');
+      this.notice(
+        accused,
+        `Your appeal failed, but you still hold a Pre-Approved Alibi Chit. Play it now to survive anyway, or accept your fate. You have ${LAST_CHANCE_SECONDS} seconds.`
+      );
+      this.broadcastState();
     } else {
-      this.broadcastNotice(`Appeal rejected (${reject}-${uphold}): ${pickOne(APPEAL_REJECTED_LINES)}`);
       this.finalizeDispute(true);
     }
+  }
+
+  private resolveLastChanceTimeout() {
+    if (!this.dispute || this.dispute.stage !== 'last_chance') return;
+    this.broadcastNotice('No further response filed. The rejected appeal stands by default.');
+    this.finalizeDispute(true);
   }
 
   private finalizeDispute(markFound: boolean) {
     if (!this.dispute) return;
     const accused = this.players.get(this.dispute.accusedId);
+    const accuserId = this.dispute.seekerId;
     this.dispute = null;
     this.resumeClockIfPaused();
 
     if (accused && markFound) {
       accused.found = true;
       accused.foundAt = Date.now();
+
+      if (this.mode === 'virtual') {
+        if (accuserId !== this.seekerId) {
+          // This finding came from a Departmental Informant's tip, not the seeker.
+          const informant = this.players.get(accuserId);
+          if (informant) {
+            informant.score += INFORMANT_BONUS_POINTS;
+            this.notice(informant, `Tip confirmed: ${accused.name} has been located. +${INFORMANT_BONUS_POINTS} Compliance Points for departmental cooperation.`);
+          }
+        }
+        this.notice(
+          accused,
+          "You've been located — and promptly recruited as a Departmental Informant. Keep moving; if you cross paths with a still-hiding colleague, you may file a tip against them."
+        );
+      }
+
       const hiders = [...this.players.values()].filter((p) => p.role === 'hider');
       const found = hiders.filter((p) => p.found).length;
       if (hiders.length > 0 && found >= hiders.length) {
@@ -1056,6 +1143,7 @@ export class GameRoom {
       case 'ping': this.handlePing(t.payload.playerId); break;
       case 'dispute_timeout': this.resolveDisputeTimeout(); break;
       case 'tribunal_timeout': this.resolveTribunal(); break;
+      case 'last_chance_timeout': this.resolveLastChanceTimeout(); break;
       case 'vote_timeout': this.tallySeekerVote(); break;
       case 'audit_check': this.auditCheck(t.payload.playerId); break;
       case 'audit_timeout': this.auditTimeoutFor(t.payload.playerId); break;
@@ -1268,7 +1356,12 @@ export class GameRoom {
     const accused = this.players.get(this.dispute.accusedId);
     const base = { stage: this.dispute.stage, accusedName: accused?.name ?? 'Unknown', reason: this.dispute.reason };
     if (viewer.id === this.dispute.accusedId) {
-      return { ...base, role: 'accused' as const, reasons: this.dispute.availableReasons, alibiChits: viewer.alibiChits };
+      return {
+        ...base,
+        role: 'accused' as const,
+        reasons: this.dispute.stage === 'awaiting_response' ? this.dispute.availableReasons : [],
+        alibiChits: viewer.alibiChits,
+      };
     }
     if (viewer.id === this.dispute.seekerId) {
       return { ...base, role: 'seeker' as const };
